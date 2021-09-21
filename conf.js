@@ -14,10 +14,10 @@ exports.hub = process.env.testnet ? 'obyte.org/bb-test' : 'obyte.org/bb';
 exports.explorer_base_url = process.env.testnet ? 'https://testnetexplorer.obyte.org/#' : 'https://explorer.obyte.org/#';
 exports.counterstake_base_url = process.env.testnet ? 'https://testnet-bridge.counterstake.org/governance/' : 'https://counterstake.org/governance';
 
-exports.counterstake_governance_export_base_AAs = [
+exports.governance_export_base_AAs = [
 	'HLNWXGGHGXWMZN27W2722MNJCHH2IVAO'
 ];
-exports.counterstake_governance_import_base_AAs = [
+exports.governance_import_base_AAs = [
 	'KDHCTQOTKTO6MLYOCU6OCBI7KK72DV3P'
 ];
 exports.token_registry_AA_address = "O6H6ZIFI57X3PLTYHOCVYPP5A553CYFQ";

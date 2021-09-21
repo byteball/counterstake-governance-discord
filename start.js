@@ -19,8 +19,8 @@ eventBus.once('connected', function(ws){
 async function start(){
 	await discoverGovernanceAas();
 	eventBus.on('connected', function(ws){
-		conf.counterstake_governance_export_base_AAs
-		.concat(conf.counterstake_governance_import_base_AAs)
+		conf.governance_export_base_AAs
+		.concat(conf.governance_import_base_AAs)
 		.forEach((address) => {
 			network.addLightWatchedAa(address, null, console.log);
 		});
@@ -46,13 +46,13 @@ eventBus.on('aa_response', async function(objResponse){
 });
 
 async function discoverGovernanceAas(){
-	rows = await DAG.getAAsByBaseAAs(conf.counterstake_governance_export_base_AAs.concat(conf.counterstake_governance_import_base_AAs));
-	await Promise.all(rows.map(indexAndWatchCounterstakeGovernanceAA));
+	rows = await DAG.getAAsByBaseAAs(conf.governance_export_base_AAs.concat(conf.governance_import_base_AAs));
+	await Promise.all(rows.map(indexAndWatchGovernanceAA));
 }
 
-async function indexAndWatchCounterstakeGovernanceAA(governanceAA){
+async function indexAndWatchGovernanceAA(governanceAA){
 	return new Promise(async function(resolve){
-		const isImport = conf.counterstake_governance_import_base_AAs.includes(governanceAA.definition[1].base_aa);
+		const isImport = conf.governance_import_base_AAs.includes(governanceAA.definition[1].base_aa);
 		const mainAAAddress = governanceAA.definition[1].params[isImport ? 'import_aa' : 'export_aa'];
 
 		await indexAllCounterstakeAaParams(mainAAAddress, isImport);
