@@ -7,7 +7,7 @@ const walletGeneral = require('ocore/wallet_general.js');
 const governanceEvents = require('governance_events/governance_events.js');
 const governanceDiscord = require('governance_events/governance_discord.js');
 
-var assocCounterstakeGovernanceAAs = {};
+var assocGovernanceAAs = {};
 var assocCounterstakeAAs = {};
 
 lightWallet.setLightVendorHost(conf.hub);
@@ -34,8 +34,8 @@ eventBus.on('aa_response', async function(objResponse){
 		return console.log('ignored response with error: ' + objResponse.response.error);
 	if ((Math.ceil(Date.now() / 1000) - objResponse.timestamp) / 60 / 60 > 24)
 		return console.log('ignored old response' + objResponse);
-	if (assocCounterstakeGovernanceAAs[objResponse.aa_address]){
-		const governance_aa = assocCounterstakeGovernanceAAs[objResponse.aa_address];
+	if (assocGovernanceAAs[objResponse.aa_address]){
+		const governance_aa = assocGovernanceAAs[objResponse.aa_address];
 		const main_aa = assocCounterstakeAAs[governance_aa.main_aa];
 
 		const event = await governanceEvents.treatResponseFromGovernanceAA(objResponse, main_aa.asset);
@@ -56,7 +56,7 @@ async function indexAndWatchCounterstakeGovernanceAA(governanceAA){
 		const mainAAAddress = governanceAA.definition[1].params[isImport ? 'import_aa' : 'export_aa'];
 
 		await indexAllCounterstakeAaParams(mainAAAddress, isImport);
-		assocCounterstakeGovernanceAAs[governanceAA.address] = {
+		assocGovernanceAAs[governanceAA.address] = {
 			main_aa: mainAAAddress,
 			is_import: isImport
 		}
