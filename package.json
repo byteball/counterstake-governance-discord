@@ -1,11 +1,11 @@
 {
-	"name": "counterstake-discord-bot",
+	"name": "counterstake-governance-discord",
 	"version": "0.1.0",
 	"dependencies": {
-		"ocore": "git+https://github.com/byteball/ocore.git",
-		"dotenv": "^8.2.0",
 		"aabot": "git+https://github.com/byteball/aabot.git",
-		"governance_events": "git+https://github.com/byteball/governance_events.git"
+		"dotenv": "^8.2.0",
+		"governance_events": "git+https://github.com/byteball/governance_events.git",
+		"ocore": "git+https://github.com/byteball/ocore.git"
 	},
 	"resolutions": {
 		"level-rocksdb": "^4.0.0"

@@ -1,4 +1,4 @@
-# Counterstake Discord bot
+# Counterstake Governance Discord bot
 
 Watch the [Obyte counterstake governance AAs](https://counterstake.org) and posts notifications on Discord when something happens.
 
