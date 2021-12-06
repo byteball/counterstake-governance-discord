@@ -1,0 +1,1 @@
+*/20 * * * * cd counterstake-governance-discord; node check_daemon.js 1>>~/.config/counterstake-governance-discord/check_daemon.log 2>>~/.config/counterstake-governance-discord/check_daemon.err
