@@ -12,7 +12,11 @@ function getLinkToExplorerByAddress(network, address) {
 	return getLinkToExplorer(network) + '/address/' + address;
 }
 
+function getLinkToExplorerByTX(network, hash) {
+	return getLinkToExplorer(network) + '/tx/' + hash;
+}
+
 module.exports = {
-	getLinkToExplorer,
 	getLinkToExplorerByAddress,
+	getLinkToExplorerByTX,
 }

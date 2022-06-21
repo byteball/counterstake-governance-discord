@@ -1,5 +1,8 @@
 const governanceDiscord = require("governance_events/governance_discord");
-const { getLinkToExplorerByAddress, getLinkToExplorer } = require("../../utils/getLinkToExplorer");
+const {
+	getLinkToExplorerByAddress,
+	getLinkToExplorerByTX
+} = require("../../utils/getLinkToExplorer");
 
 class Discord {
 	static announceEvent(meta, event) {
@@ -10,7 +13,7 @@ class Discord {
 			meta.decimals,
 			getLinkToExplorerByAddress(meta.network, meta.main_aa),
 			event,
-			getLinkToExplorer(meta.network)
+			getLinkToExplorerByTX(meta.network, event.trigger_unit)
 		);
 	}
 }
