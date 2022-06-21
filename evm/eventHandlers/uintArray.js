@@ -12,7 +12,7 @@ function vote(contract, who, arrValue, votes, total_votes, arrLeader, leader_tot
 	const event = {
 		aa_address: address,
 		trigger_address: who,
-		trigger_unit: transaction.blockHash,
+		trigger_unit: transaction.transactionHash,
 		added_support: votes.toString(),
 		name: contract_name,
 		type: 'added_support',
@@ -39,7 +39,7 @@ async function unvote(contract, provider, who, arrValue, votes, transaction) {
 	const event = {
 		aa_address: address,
 		trigger_address: who,
-		trigger_unit: transaction.blockHash,
+		trigger_unit: transaction.transactionHash,
 		name: contract_name,
 		type: 'removed_support',
 		leader_support: leader_support.toString(),

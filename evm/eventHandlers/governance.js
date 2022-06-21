@@ -7,7 +7,7 @@ async function deposit(contract, who, amount, transaction) {
 	let event = {
 		aa_address: address,
 		trigger_address: who,
-		trigger_unit: transaction.blockHash,
+		trigger_unit: transaction.transactionHash,
 		name: contract_name,
 		type: 'deposit',
 		amount: amount.toString(),
@@ -24,7 +24,7 @@ async function withdrawal(contract, who, amount, transaction) {
 	let event = {
 		aa_address: address,
 		trigger_address: who,
-		trigger_unit: transaction.blockHash,
+		trigger_unit: transaction.transactionHash,
 		name: contract_name,
 		type: 'withdraw',
 		amount: amount.toString(),
