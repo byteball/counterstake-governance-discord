@@ -2,7 +2,6 @@ const { ethers, BigNumber } = require('ethers');
 
 class Formatter {
 	static format(name, value, meta) {
-		console.log('name', name, value, meta);
 		if (name === 'min_price20') {
 			return ethers.utils.formatUnits(BigNumber.from(value), 20);
 		}

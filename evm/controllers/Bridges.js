@@ -10,6 +10,9 @@ class Bridges {
 	async init() {
 		console.error('init bridges');
 		const b = await getBridges();
+		if (!b.length) {
+			throw new Error('Failed to initialize bridges!')
+		}
 		console.error('bridges:', b.length);
 		for (let i = 0; i < b.length; i++) {
 			await this.#parseBridge(b[i]);
@@ -23,7 +26,6 @@ class Bridges {
 		}
 
 		this.#basicContractsByNetwork[network].push({
-			network,
 			type,
 			aa,
 			aa_version,

@@ -1,9 +1,7 @@
 const { ethers } = require("ethers");
 
 const Handlers = require('./Handlers');
-
-const { counterstakeAbi } = require("../abi/counterstakeAbi");
-const { governanceAbi } = require("../abi/governanceAbi");
+const { getAbiByType } = require('../abi/getAbiByType');
 
 class ContractManager {
 	#contracts = {
@@ -18,6 +16,24 @@ class ContractManager {
 		UintArray: Handlers.addUintArrayHandler,
 		address: Handlers.addAddressHandler,
 	};
+
+	async initNetworkContracts(contracts, network, provider) {
+		if (this.#initializedNetworks[network]) {
+			return;
+		}
+
+		for (let index in contracts) {
+			const contract = contracts[index];
+			await this.#getContracts(contract, network, provider);
+		}
+
+		console.error('initNetworkContracts:', network, 'done');
+		this.#initializedNetworks[network] = true;
+
+		if (this.#readyHandlers[network]) {
+			this.#readyHandlers[network](this.#contracts.v1[network]);
+		}
+	}
 
 	initHandlersByNetwork(network, provider) {
 		if (!this.#contracts['v1.1'][network]) {
@@ -48,15 +64,15 @@ class ContractManager {
 		});
 	}
 
-	async #getContracts(contract, provider) {
-		const { network, type, aa, aa_version, symbol, decimals } = contract;
+	async #getContracts(contract, network, provider) {
+		const { type, aa, aa_version, symbol, decimals } = contract;
 
 		const isImport = type === 'import';
 		const meta = { aa_version, network, symbol, decimals, isImport, main_aa: aa };
 
-		const cs = new ethers.Contract(aa, counterstakeAbi, provider);
+		const cs = new ethers.Contract(aa, getAbiByType('counterstake'), provider);
 		const governance_address = await cs.governance();
-		const governance = new ethers.Contract(governance_address, governanceAbi, provider);
+		const governance = new ethers.Contract(governance_address, getAbiByType('governance'), provider);
 
 		meta.governance_address = governance_address;
 
@@ -89,24 +105,6 @@ class ContractManager {
 
 			const min_price20 = await governance.votedValuesMap('min_price20');
 			this.#addContract(meta, min_price20, 'Uint', 'min_price20');
-		}
-	}
-
-	async initNetworkContracts(contracts, network, provider) {
-		if (this.#initializedNetworks[network]) {
-			return;
-		}
-
-		for (let index in contracts) {
-			const contract = contracts[index];
-			await this.#getContracts(contract, provider);
-		}
-
-		console.error('initNetworkContracts:', network, 'done');
-		this.#initializedNetworks[network] = true;
-
-		if (this.#readyHandlers[network]) {
-			this.#readyHandlers[network](this.#contracts.v1[network]);
 		}
 	}
 }

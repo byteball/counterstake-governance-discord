@@ -1,20 +1,14 @@
 const { ethers } = require("ethers");
 
-const { governanceAbi } = require("../abi/governanceAbi")
+const { getAbiByType } = require('../abi/getAbiByType');
 const governanceHandlers = require('../eventHandlers/governance');
-
-const { votedValueUintAbi } = require("../abi/votedValueUintAbi");
 const uintHandlers = require("../eventHandlers/uint");
-
-const { votedValueUintArrayAbi } = require("../abi/votedValueUintArrayAbi");
 const uintArrayHandlers = require("../eventHandlers/uintArray");
-
-const { votedAddressAbi } = require("../abi/votedAddressAbi");
 const addressHandlers = require("../eventHandlers/address");
 
 class Handlers {
 	static addGovernanceHandler(contract, provider) {
-		const c = new ethers.Contract(contract.address, governanceAbi, provider);
+		const c = new ethers.Contract(contract.address, getAbiByType('governance'), provider);
 		c.on('Deposit', (...args) => {
 			governanceHandlers.deposit(contract, ...args);
 		});
@@ -24,7 +18,7 @@ class Handlers {
 	}
 
 	static addUintHandler(contract, provider) {
-		const c = new ethers.Contract(contract.address, votedValueUintAbi, provider);
+		const c = new ethers.Contract(contract.address, getAbiByType('Uint'), provider);
 		c.on('Vote', (...args) => {
 			uintHandlers.vote(contract, ...args);
 		});
@@ -34,7 +28,7 @@ class Handlers {
 	}
 
 	static addUintArrayHandler(contract, provider) {
-		const c = new ethers.Contract(contract.address, votedValueUintArrayAbi, provider);
+		const c = new ethers.Contract(contract.address, getAbiByType('UintArray'), provider);
 		c.on('Vote', (...args) => {
 			uintArrayHandlers.vote(contract, ...args);
 		});
@@ -44,7 +38,7 @@ class Handlers {
 	}
 
 	static addAddressHandler(contract, provider) {
-		const c = new ethers.Contract(contract.address, votedAddressAbi, provider);
+		const c = new ethers.Contract(contract.address, getAbiByType('address'), provider);
 		c.on('Vote', (...args) => {
 			addressHandlers.vote(contract, ...args);
 		});

@@ -1,8 +1,9 @@
 const { ethers } = require("ethers");
-const Formatter = require("../controllers/Formatter");
-const Discord = require("../controllers/Discord");
+
 const { getAbiByType } = require("../abi/getAbiByType");
 const DataFetcher = require("../controllers/DataFetcher");
+const Formatter = require("../controllers/Formatter");
+const Discord = require("../controllers/Discord");
 
 // (address indexed who, uint[] value, uint votes, uint total_votes, uint[] leader, uint leader_total_votes, uint expiry_ts)
 function vote(contract, who, arrValue, votes, total_votes, arrLeader, leader_total_votes, expiry_ts, transaction) {

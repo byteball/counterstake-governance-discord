@@ -8,7 +8,6 @@ const ContractRunnerForV1 = require('./controllers/ContractRunnerForV1');
 const { eventsForV1 } = require('./eventsForV1');
 
 const moralis = require('./moralis/index');
-const Moralis = require("moralis/node");
 
 function generateMetaForEventsInV1() {
 	for (let type in eventsForV1) {
@@ -24,17 +23,17 @@ function generateMetaForEventsInV1() {
 	}
 }
 
-function initNetwork(name, contractManager, contractManagerOfV1, bridges) {
-	const p = new Provider(name);
-	contractManager.onV1Ready(name, (contracts) => { // v1
-		contractManagerOfV1.setContracts(name, contracts);
+function initNetwork(network, contractManager, contractManagerOfV1, bridges) {
+	const p = new Provider(network);
+	contractManager.onV1Ready(network, (contracts) => { // v1
+		contractManagerOfV1.setContracts(network, contracts);
 	});
 	p.connect(async () => { // >= v1.1
-		contractManagerOfV1.setProvider(name, p.provider);
-		const contracts = bridges.getContractsByNetwork(name);
-		await contractManager.initNetworkContracts(contracts, name, p.provider);
-		contractManager.initHandlersByNetwork(name, p.provider);
-		console.error(`[${name}]: connected`);
+		contractManagerOfV1.setProvider(network, p.provider);
+		const contracts = bridges.getContractsByNetwork(network);
+		await contractManager.initNetworkContracts(contracts, network, p.provider);
+		contractManager.initHandlersByNetwork(network, p.provider);
+		console.error(`[${network}]: connected`);
 	});
 }
 
@@ -47,9 +46,9 @@ async function init() {
 	const contractManager = new ContractManager();
 	const contractManagerOfV1 = new ContractRunnerForV1();
 
-	// initNetwork('Ethereum', contractManager, contractManagerOfV1, bridges);
+	initNetwork('Ethereum', contractManager, contractManagerOfV1, bridges);
 	initNetwork('BSC', contractManager, contractManagerOfV1, bridges);
-	// initNetwork('Polygon', contractManager, contractManagerOfV1, bridges);
+	initNetwork('Polygon', contractManager, contractManagerOfV1, bridges);
 }
 
 module.exports = {

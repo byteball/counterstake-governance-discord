@@ -15,25 +15,27 @@ const Discord = require("./Discord");
 class ContractRunnerForV1 {
 	#contracts = {};
 	#providers = {};
+	#intervalInMinutes;
+	#intervalInitialized = false;
 
 	constructor(intervalInMinutes = 30) {
-		setInterval(this.#exec.bind(this), intervalInMinutes * 60 * 1000);
+		this.#intervalInMinutes = intervalInMinutes;
 	}
 
-	static #getNameAndDateFromInput(input, type) {
+	static #getNameAndDataFromInput(input, type) {
 		const metaForDecode = eventsForV1[type];
 		if (!metaForDecode) {
 			console.error('!type', type);
-			return;
+			return { name: null, data: null };
 		}
 
 		const event = metaForDecode.events.find(v => input.startsWith(v.sighash));
 		if (!event) {
 			console.error('!event', type, input);
-			return;
+			return { name: null, data: null };
 		}
 
-		let data = metaForDecode.iface.decodeFunctionData(event.name, input);
+		const data = metaForDecode.iface.decodeFunctionData(event.name, input);
 		return {
 			name: event.name,
 			data,
@@ -54,8 +56,15 @@ class ContractRunnerForV1 {
 		if (!unlock) {
 			return;
 		}
+
 		await sleep(timeInSeconds);
 		this.#exec();
+
+		if (!this.#intervalInitialized) {
+			setInterval(this.#exec.bind(this), this.#intervalInMinutes * 60 * 1000);
+			this.#intervalInitialized = true;
+		}
+
 		unlock();
 	}
 
@@ -66,10 +75,9 @@ class ContractRunnerForV1 {
 			from_block: lastBlock,
 		};
 
-		let transactions
 		try {
-			transactions = await Moralis.Web3API.account.getTransactions(options);
-			console.error('getTransactions: done');
+			const transactions = await Moralis.Web3API.account.getTransactions(options);
+			return transactions.result.filter(v => v.to_address === address.toLowerCase()).reverse();
 		} catch (e) {
 			if (!r || r <= 2) {
 				console.error('repeat getTransactions');
@@ -79,22 +87,21 @@ class ContractRunnerForV1 {
 			console.error(e);
 			return [];
 		}
-		return transactions.result.filter(v => v.to_address === address.toLowerCase()).reverse();
 	}
 
 	async #preparingEventFromInput(network, transaction, contract) {
 		const { input, from_address, hash } = transaction;
 		const { type, name: contract_name, address, meta } = contract;
 
-		const { name, data } = ContractRunnerForV1.#getNameAndDateFromInput(input, type);
+		const { name, data } = ContractRunnerForV1.#getNameAndDataFromInput(input, type);
+		if (!name) return;
+
 		let event = {
 			aa_address: address,
 			trigger_address: from_address,
 			trigger_unit: hash,
 			name: contract_name,
 		}
-
-		console.error(event, name);
 
 		if (name.startsWith('deposit')) {
 			const transactions = await getInternalTransactions(meta.network, hash);
@@ -161,22 +168,29 @@ class ContractRunnerForV1 {
 		for (let network in this.#contracts) {
 			const chainName = getChainNameForMoralis(network, !!process.env.testnet);
 			const c = this.#contracts[network];
-			if (!c) continue;
+			if (!c || !c.length) continue;
 
 			for (let i = 0; i < c.length; i++) {
 				const contract = c[i];
 				const meta = contract.meta;
 				const lastBlock = await Web3_addresses.getLastBlockByAddress(contract.address);
 				const transactions = await this.#getTransactions(chainName, contract.address, lastBlock);
+
 				if (transactions.length) {
-					let lb = lastBlock;
+					let lb = 0;
 					for (let j = 0; j < transactions.length; j++) {
 						let transaction = transactions[j];
 						const event = await this.#preparingEventFromInput(network, transaction, contract);
+						if (!event) {
+							continue;
+						}
 						Discord.announceEvent(meta, event);
 						lb = transaction.block_number;
 					}
-					await Web3_addresses.setLastBlockByAddress(contract.address, Number(lb) + 1);
+
+					if (lb) {
+						await Web3_addresses.setLastBlockByAddress(contract.address, Number(lb) + 1);
+					}
 				}
 				await sleep(2);
 			}

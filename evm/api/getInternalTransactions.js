@@ -3,8 +3,13 @@ const axios = require("axios");
 const sleep = require("../../utils/sleep");
 
 function getUrl(chain, hash) {
-	if (chain === 'BSC') {
-		return `https://api${process.env.testnet ? '-testnet' : ''}.bscscan.com/api?module=account&action=txlistinternal&txhash=${hash}&apikey=${conf.scan_api_keys.BSC}`;
+	switch (chain) {
+		case 'Ethereum':
+			return `https://api${process.env.testnet ? '-rinkeby' : ''}.etherscan.io/api?module=account&action=txlistinternal&txhash=${hash}&apikey=${conf.scan_api_keys.Ethereum}`;
+		case 'BSC':
+			return `https://api${process.env.testnet ? '-testnet' : ''}.bscscan.com/api?module=account&action=txlistinternal&txhash=${hash}&apikey=${conf.scan_api_keys.BSC}`;
+		case 'Polygon':
+			return `https://api${process.env.testnet ? '-testnet' : ''}.polygonscan.com/api?module=account&action=txlistinternal&txhash=${hash}&apikey=${conf.scan_api_keys.Polygon}`;
 	}
 }
 

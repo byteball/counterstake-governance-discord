@@ -34,6 +34,13 @@ class Provider {
 		return this.#provider;
 	}
 
+	connect(cb) {
+		if (cb) {
+			this.#connectCB = cb;
+		}
+		this.#createProvider();
+	}
+
 	#createProvider() {
 		console.error(`[Provider[${this.#network}].ws] create provider`);
 		this.#provider = new ethers.providers.WebSocketProvider(this.#url);
@@ -68,13 +75,6 @@ class Provider {
 		clearTimeout(this.#pingTimeout)
 		await sleep(5);
 		this.connect();
-	}
-
-	connect(cb) {
-		if (cb) {
-			this.#connectCB = cb;
-		}
-		this.#createProvider();
 	}
 }
 
