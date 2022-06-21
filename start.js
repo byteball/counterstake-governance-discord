@@ -6,6 +6,8 @@ const lightWallet = require('ocore/light_wallet.js');
 const walletGeneral = require('ocore/wallet_general.js');
 const governanceEvents = require('governance_events/governance_events.js');
 const governanceDiscord = require('governance_events/governance_discord.js');
+const migration = require('./migration');
+const evm = require('./evm');
 
 var assocGovernanceAAs = {};
 var assocCounterstakeAAs = {};
@@ -27,6 +29,8 @@ async function start(){
 	});
 	lightWallet.refreshLightClientHistory();
 	setInterval(discoverGovernanceAas, 24*3600*1000); // everyday check
+	await migration.init()
+	await evm.init();
 }
 
 eventBus.on('aa_response', async function(objResponse){
@@ -46,7 +50,7 @@ eventBus.on('aa_response', async function(objResponse){
 });
 
 async function discoverGovernanceAas(){
-	rows = await DAG.getAAsByBaseAAs(conf.governance_export_base_AAs.concat(conf.governance_import_base_AAs));
+	const rows = await DAG.getAAsByBaseAAs(conf.governance_export_base_AAs.concat(conf.governance_import_base_AAs));
 	await Promise.all(rows.map(indexAndWatchGovernanceAA));
 }
 
