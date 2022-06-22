@@ -105,8 +105,10 @@ class ContractRunnerForV1 {
 
 		if (name.startsWith('deposit')) {
 			const transactions = await getInternalTransactions(meta.network, hash);
+			if (!transactions.length) return console.error('!transactions.length deposit', meta.network, hash);
+
 			event.type = 'deposit';
-			event.amount = transactions.length ? transactions[0].value : 0;
+			event.amount = transactions[0].value;
 
 			console.error('event=', event);
 			return event;
@@ -114,8 +116,10 @@ class ContractRunnerForV1 {
 
 		if (name.startsWith("withdraw")) {
 			const transactions = await getInternalTransactions(meta.network, hash);
+			if (!transactions.length) return console.error('!transactions.length withdraw', meta.network, hash);
+
 			event.type = 'withdraw';
-			event.amount = transactions.length ? transactions[0].value : 0;
+			event.amount = transactions[0].value;
 
 			console.error('event=', event);
 			return event;
