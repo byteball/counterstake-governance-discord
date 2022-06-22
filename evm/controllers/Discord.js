@@ -1,4 +1,6 @@
 const governanceDiscord = require("governance_events/governance_discord");
+const { ethers } = require('ethers');
+
 const {
 	getLinkToExplorerByAddress,
 	getLinkToExplorerByTX
@@ -6,6 +8,8 @@ const {
 
 class Discord {
 	static announceEvent(meta, event) {
+		event.trigger_address = ethers.utils.getAddress(event.trigger_address);
+
 		const aa_name = meta.main_aa + ' - ' + meta.symbol + ' on ' + meta.network + ' (' + (meta.isImport ? 'import' : 'export') + ')';
 		governanceDiscord.announceEvent(
 			aa_name,
