@@ -22,7 +22,7 @@ exports.governance_import_base_AAs = [
 ];
 exports.token_registry_AA_address = "O6H6ZIFI57X3PLTYHOCVYPP5A553CYFQ";
 
-exports.cs_url = 'https://testnet-bridge.counterstake.org/api';
+exports.cs_url = process.env.testnet ? 'https://testnet-bridge.counterstake.org/api' : 'https://counterstake.org/api';
 
 exports.ws_nodes = {
 	Ethereum: process.env.ws_nodes_Ethereum,

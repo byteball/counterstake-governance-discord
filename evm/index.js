@@ -25,10 +25,10 @@ function generateMetaForEventsInV1() {
 
 function initNetwork(network, contractManager, contractManagerOfV1, bridges) {
 	const p = new Provider(network);
-	contractManager.onV1Ready(network, (contracts) => { // v1
+	contractManager.onV1Ready(network, (contracts) => { // v1 only
 		contractManagerOfV1.setContracts(network, contracts);
 	});
-	p.connect(async () => { // >= v1.1
+	p.connect(async () => { // new provider (connect/reconnect)
 		contractManagerOfV1.setProvider(network, p.provider);
 		const contracts = bridges.getContractsByNetwork(network);
 		await contractManager.initNetworkContracts(contracts, network, p.provider);

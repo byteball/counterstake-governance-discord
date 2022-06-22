@@ -1,10 +1,10 @@
 const { getBridges } = require("../api/getBridges");
 
 class Bridges {
-	#basicContractsByNetwork = {};
+	#bridgeContractsByNetwork = {};
 
 	getContractsByNetwork(network) {
-		return this.#basicContractsByNetwork[network];
+		return this.#bridgeContractsByNetwork[network];
 	}
 
 	async init() {
@@ -20,12 +20,12 @@ class Bridges {
 		}
 	}
 
-	#addBasicContract(network, type, aa, aa_version, symbol, decimals) {
-		if (!this.#basicContractsByNetwork[network]) {
-			this.#basicContractsByNetwork[network] = [];
+	#addBridgeContract(network, type, aa, aa_version, symbol, decimals) {
+		if (!this.#bridgeContractsByNetwork[network]) {
+			this.#bridgeContractsByNetwork[network] = [];
 		}
 
-		this.#basicContractsByNetwork[network].push({
+		this.#bridgeContractsByNetwork[network].push({
 			type,
 			aa,
 			aa_version,
@@ -36,7 +36,7 @@ class Bridges {
 
 	#parseBridge(bridge) {
 		if (bridge.home_network !== 'Obyte') {
-			this.#addBasicContract(bridge.home_network,
+			this.#addBridgeContract(bridge.home_network,
 				'export',
 				bridge.export_aa,
 				bridge.e_v,
@@ -45,7 +45,7 @@ class Bridges {
 		}
 
 		if (bridge.foreign_network !== 'Obyte') {
-			this.#addBasicContract(bridge.foreign_network,
+			this.#addBridgeContract(bridge.foreign_network,
 				'import',
 				bridge.import_aa,
 				bridge.i_v,
