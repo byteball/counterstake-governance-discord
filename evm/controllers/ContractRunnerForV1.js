@@ -105,7 +105,10 @@ class ContractRunnerForV1 {
 
 		if (name.startsWith('deposit')) {
 			const transactions = await getInternalTransactions(meta.network, hash);
-			if (!transactions.length) return console.error('!transactions.length deposit', meta.network, hash);
+			if (!transactions.length) {
+				console.error('!transactions.length deposit', meta.network, hash);
+				return 'err';
+			}
 
 			event.type = 'deposit';
 			event.amount = transactions[0].value;
@@ -116,7 +119,10 @@ class ContractRunnerForV1 {
 
 		if (name.startsWith("withdraw")) {
 			const transactions = await getInternalTransactions(meta.network, hash);
-			if (!transactions.length) return console.error('!transactions.length withdraw', meta.network, hash);
+			if (!transactions.length) {
+				console.error('!transactions.length deposit', meta.network, hash);
+				return 'err';
+			}
 
 			event.type = 'withdraw';
 			event.amount = transactions[0].value;
@@ -185,9 +191,8 @@ class ContractRunnerForV1 {
 					for (let j = 0; j < transactions.length; j++) {
 						let transaction = transactions[j];
 						const event = await this.#preparingEventFromInput(network, transaction, contract);
-						if (!event) {
-							continue;
-						}
+						if (!event) continue;
+						if (event === 'err') break;
 						Discord.announceEvent(meta, event);
 						lb = transaction.block_number;
 					}
