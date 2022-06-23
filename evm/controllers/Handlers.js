@@ -9,9 +9,6 @@ const addressHandlers = require("../eventHandlers/address");
 class Handlers {
 	static addGovernanceHandler(contract, provider) {
 		const c = new ethers.Contract(contract.address, getAbiByType('governance'), provider);
-		c.on('Deposit', (...args) => {
-			governanceHandlers.deposit(contract, ...args);
-		});
 		c.on('Withdrawal', (...args) => {
 			governanceHandlers.withdrawal(contract, ...args);
 		});

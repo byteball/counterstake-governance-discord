@@ -89,7 +89,7 @@ class ContractRunnerForV1 {
 		}
 	}
 
-	async #preparingEventFromInput(network, transaction, contract) {
+	async #prepareEventFromInput(network, transaction, contract) {
 		const { input, from_address, hash } = transaction;
 		const { type, name: contract_name, address, meta } = contract;
 
@@ -190,7 +190,7 @@ class ContractRunnerForV1 {
 					let lb = 0;
 					for (let j = 0; j < transactions.length; j++) {
 						let transaction = transactions[j];
-						const event = await this.#preparingEventFromInput(network, transaction, contract);
+						const event = await this.#prepareEventFromInput(network, transaction, contract);
 						if (!event) continue;
 						if (event === 'err') break;
 						Discord.announceEvent(meta, event);
