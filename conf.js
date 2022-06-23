@@ -22,4 +22,24 @@ exports.governance_import_base_AAs = [
 ];
 exports.token_registry_AA_address = "O6H6ZIFI57X3PLTYHOCVYPP5A553CYFQ";
 
+exports.cs_url = process.env.testnet ? 'https://testnet-bridge.counterstake.org/api' : 'https://counterstake.org/api';
+
+exports.ws_nodes = {
+	Ethereum: process.env.ws_nodes_Ethereum,
+	BSC: process.env.ws_nodes_BSC,
+	Polygon: process.env.ws_nodes_Polygon,
+}
+
+exports.moralis = {
+	serverUrl: process.env.moralis_serverUrl,
+	appId: process.env.moralis_appId,
+	masterKey: process.env.moralis_masterKey,
+}
+
+exports.scan_api_keys = {
+	Ethereum: process.env.eth_scan_api_key,
+	BSC: process.env.bsc_scan_api_key,
+	Polygon: process.env.polygon_scan_api_key,
+};
+
 console.log('finished server conf');
