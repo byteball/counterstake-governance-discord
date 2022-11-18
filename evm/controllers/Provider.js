@@ -42,7 +42,7 @@ class Provider {
 	}
 
 	#createProvider() {
-		console.error(`[Provider[${this.#network}].ws] create provider`);
+		console.log(`[Provider[${this.#network}].ws] create provider`);
 		this.#provider = new ethers.providers.WebSocketProvider(this.#url);
 		this.#provider._websocket.on('open', this.#onOpen.bind(this));
 		this.#provider._websocket.on('close', this.#onClose.bind(this));
@@ -65,12 +65,12 @@ class Provider {
 	}
 
 	#onError(error) {
-		console.error(`[Provider[${this.#network}].ws_error]:`, error);
+		console.log(`[Provider[${this.#network}].ws_error]:`, error);
 		this.#provider._websocket.close();
 	}
 
 	async #onClose(code, message) {
-		console.error(`[Provider[${this.#network}].ws_close]:`, code, message);
+		console.log(`[Provider[${this.#network}].ws_close]:`, code, message);
 		clearInterval(this.#keepAliveInterval)
 		clearTimeout(this.#pingTimeout)
 		await sleep(5);

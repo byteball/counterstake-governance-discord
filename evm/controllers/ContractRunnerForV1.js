@@ -24,13 +24,13 @@ class ContractRunnerForV1 {
 	static #getNameAndDataFromInput(input, type) {
 		const metaForDecode = eventsForV1[type];
 		if (!metaForDecode) {
-			console.error('!type', type);
+			console.log('type not found', type, input);
 			return { name: null, data: null };
 		}
 
 		const event = metaForDecode.events.find(v => input.startsWith(v.sighash));
 		if (!event) {
-			console.error('!event', type, input);
+			console.log('event not found', type, input);
 			return { name: null, data: null };
 		}
 
@@ -73,11 +73,11 @@ class ContractRunnerForV1 {
 			return transactions.filter(v => v.to === address.toLowerCase()).reverse();
 		} catch (e) {
 			if (!r || r <= 2) {
-				console.error('repeat getTransactions');
+				console.log('repeat getTransactions', chain, address, lastBlock, r);
 				await sleep(20);
 				return this.#getTransactions(chain, address, lastBlock, !r ? 1 : ++r);
 			}
-			console.error(e);
+			console.log('getTransactions error:', e);
 			return [];
 		}
 	}
@@ -99,28 +99,26 @@ class ContractRunnerForV1 {
 		if (name.startsWith('deposit')) {
 			const transactions = await getInternalTransactions(meta.network, hash);
 			if (!transactions.length) {
-				console.error('!transactions.length deposit', meta.network, hash);
+				console.log('transactions not found(deposit)', meta.network, hash);
 				return 'err';
 			}
 
 			event.type = 'deposit';
 			event.amount = transactions[0].value;
 
-			console.error('event=', event);
 			return event;
 		}
 
 		if (name.startsWith("withdraw")) {
 			const transactions = await getInternalTransactions(meta.network, hash);
 			if (!transactions.length) {
-				console.error('!transactions.length deposit', meta.network, hash);
+				console.log('transactions not found(withdraw)', meta.network, hash);
 				return 'err';
 			}
 
 			event.type = 'withdraw';
 			event.amount = transactions[0].value;
 
-			console.error('event=', event);
 			return event;
 		}
 
@@ -143,7 +141,6 @@ class ContractRunnerForV1 {
 			event.value = Formatter.format(contract_name, value, meta);
 			event.support = support.toString();
 
-			console.error('event=', event);
 			return event;
 		}
 
@@ -157,7 +154,6 @@ class ContractRunnerForV1 {
 			event.leader_support = leader_support.toString();
 			event.leader_value = Formatter.format(contract_name, leader_value, meta);
 
-			console.error('event=', event);
 			return event;
 		}
 	}
@@ -167,7 +163,7 @@ class ContractRunnerForV1 {
 		if (!unlock) {
 			return;
 		}
-		console.error('exec start', (new Date()).toISOString());
+		console.log('exec start', (new Date()).toISOString());
 		for (let network in this.#contracts) {
 			const c = this.#contracts[network];
 			if (!c || !c.length) continue;
@@ -176,13 +172,17 @@ class ContractRunnerForV1 {
 				const contract = c[i];
 				const meta = contract.meta;
 				const lastBlock = await Web3_addresses.getLastBlockByAddress(contract.address);
+				
+				console.log('contract v1: ', contract.address);
 				const transactions = await this.#getTransactions(network, contract.address, lastBlock);
+				console.log('transactions:', transactions.length);
 
 				if (transactions.length) {
 					let lb = 0;
 					for (let j = 0; j < transactions.length; j++) {
-						let transaction = transactions[j];
+						const transaction = transactions[j];
 						const event = await this.#prepareEventFromInput(network, transaction, contract);
+						console.log('event:', event, transaction.hash);
 						if (!event) continue;
 						if (event === 'err') break;
 						Discord.announceEvent(meta, event);
@@ -190,13 +190,17 @@ class ContractRunnerForV1 {
 					}
 
 					if (lb) {
+						console.log('set new last block', Number(lb) + 1);
 						await Web3_addresses.setLastBlockByAddress(contract.address, Number(lb) + 1);
+					} else {
+						console.log('number of the last block has not been changed');
 					}
 				}
+				console.log('contract v1 done');
 				await sleep(2);
 			}
 		}
-		console.error('exec done', (new Date()).toISOString());
+		console.log('exec done', (new Date()).toISOString());
 		unlock();
 	}
 }

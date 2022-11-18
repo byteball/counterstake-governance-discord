@@ -27,7 +27,7 @@ class ContractManager {
 			await this.#getContracts(contract, network, provider);
 		}
 
-		console.error('initNetworkContracts:', network, 'done');
+		console.log('initNetworkContracts:', network, 'done');
 		this.#initializedNetworks[network] = true;
 
 		if (this.#readyHandlers[network]) {
@@ -55,6 +55,14 @@ class ContractManager {
 		if (!this.#contracts[meta.aa_version][meta.network]) {
 			this.#contracts[meta.aa_version][meta.network] = [];
 		}
+		
+		console.log('added contract: ', {
+			aa_version: meta.aa_version,
+			network: meta.network,
+			address,
+			type,
+			name,
+		});
 
 		this.#contracts[meta.aa_version][meta.network].push({
 			address,

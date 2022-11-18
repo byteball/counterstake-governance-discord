@@ -8,15 +8,15 @@ class Bridges {
 	}
 
 	async init() {
-		console.error('init bridges');
+		console.log('init bridges');
 		const b = await getBridges();
 		if (!b.length) {
 			throw new Error('Failed to initialize bridges!')
 		}
-		console.error('bridges:', b.length);
+		console.log('bridges:', b.length);
 		for (let i = 0; i < b.length; i++) {
 			await this.#parseBridge(b[i]);
-			console.error(`bridges: ${i + 1}/${b.length} done`);
+			console.log(`bridges: ${i + 1}/${b.length} done`);
 		}
 	}
 
@@ -24,6 +24,15 @@ class Bridges {
 		if (!this.#bridgeContractsByNetwork[network]) {
 			this.#bridgeContractsByNetwork[network] = [];
 		}
+		
+		console.log('added bridge contract', {
+			network,
+			type,
+			aa,
+			aa_version,
+			symbol,
+			decimals,
+		})
 
 		this.#bridgeContractsByNetwork[network].push({
 			type,

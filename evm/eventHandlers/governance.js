@@ -13,7 +13,7 @@ async function withdrawal(contract, who, amount, transaction) {
 		amount: amount.toString(),
 	}
 
-	console.error('event=', event);
+	console.log('event v2:', event);
 	Discord.announceEvent(meta, event);
 }
 

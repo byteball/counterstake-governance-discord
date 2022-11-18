@@ -21,12 +21,14 @@ async function getNormalTransactions(chain, address, lastBlock, r = 0) {
 		if (r.data.message === 'OK') {
 			return r.data.result;
 		}
+		if (r.data.message === 'NOTOK' && r.data.result === 'Max rate limit reached') {
+			throw 'Max rate limit reached';
+		}
 		return []
 	} catch (e) {
-		console.error('ERROR', e);
-		if (r < 5 && e.response.status === 504) {
+		console.log('getNormalTransactions error', chain, address, lastBlock, r, e);
+		if (r < 5) {
 			await sleep(10);
-			console.error('sleep: done');
 			return getNormalTransactions(chain, address, lastBlock, ++r);
 		}
 		return [];

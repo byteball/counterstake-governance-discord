@@ -31,7 +31,7 @@ function initNetwork(network, contractManager, contractManagerOfV1, bridges) {
 		const contracts = bridges.getContractsByNetwork(network);
 		await contractManager.initNetworkContracts(contracts, network, p.provider);
 		contractManager.initHandlersByNetwork(network, p.provider);
-		console.error(`[${network}]: connected`);
+		console.log(`[${network}]: connected`);
 	});
 }
 
