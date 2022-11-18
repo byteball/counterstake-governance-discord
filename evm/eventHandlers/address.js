@@ -22,7 +22,7 @@ function vote(contract, who, value, votes, total_votes, leader, leader_total_vot
 		support: total_votes.toString(),
 	}
 
-	console.error('event=', event);
+	console.log('event v2:', event);
 	Discord.announceEvent(meta, event);
 }
 
@@ -46,7 +46,7 @@ async function unvote(contract, provider, who, value, votes, transaction) {
 		leader_value: Formatter.format(contract_name, leader_value, meta),
 	}
 
-	console.error('event=', event);
+	console.log('event v2:', event);
 	Discord.announceEvent(meta, event);
 }
 

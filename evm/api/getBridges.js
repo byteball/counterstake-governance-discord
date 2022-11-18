@@ -7,9 +7,9 @@ async function getBridges(r = 0) {
 		const bridges = await axios.get(`${conf.cs_url}/bridges`);
 		return bridges.data.data;
 	} catch (e) {
+		console.log('getBridges error:', e);
 		if (r < 5 && e.response.status === 504) {
 			await sleep(10);
-			console.error('sleep: done');
 			return getBridges(++r);
 		}
 		return [];
