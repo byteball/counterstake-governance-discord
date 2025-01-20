@@ -28,6 +28,7 @@ exports.ws_nodes = {
 	Ethereum: process.env.ws_nodes_Ethereum,
 	BSC: process.env.ws_nodes_BSC,
 	Polygon: process.env.ws_nodes_Polygon,
+	Kava: process.env.ws_nodes_Kava,
 }
 
 exports.scan_api_keys = {

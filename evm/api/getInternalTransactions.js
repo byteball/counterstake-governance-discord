@@ -12,6 +12,7 @@ function getUrl(chain, hash) {
 		case 'Polygon':
 			return `https://api${process.env.testnet ? '-testnet' : ''}.polygonscan.com/${q}&apikey=${conf.scan_api_keys.Polygon}`;
 	}
+	throw Error(`getInternalTransactions: unknown chain ${chain}`);
 }
 
 async function getInternalTransactions(chain, hash, r = 0) {

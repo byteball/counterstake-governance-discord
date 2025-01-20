@@ -12,6 +12,7 @@ function getUrl(chain, address, lastBlock) {
 		case 'Polygon':
 			return `https://api${process.env.testnet ? '-testnet' : ''}.polygonscan.com/${q}&apikey=${conf.scan_api_keys.Polygon}`;
 	}
+	throw Error(`getNormalTransactions: unknown chain ${chain}`);
 }
 
 async function getNormalTransactions(chain, address, lastBlock, r = 0) {
