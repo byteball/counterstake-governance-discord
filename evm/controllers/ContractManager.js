@@ -3,6 +3,11 @@ const { ethers } = require("ethers");
 const Handlers = require('./Handlers');
 const { getAbiByType } = require('../abi/getAbiByType');
 
+
+function wait(ms) {
+	return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 class ContractManager {
 	#contracts = {
 		v1: {},
@@ -25,6 +30,7 @@ class ContractManager {
 		for (let index in contracts) {
 			const contract = contracts[index];
 			await this.#getContracts(contract, network, provider);
+			await wait(100);
 		}
 
 		console.log('initNetworkContracts:', network, 'done');
