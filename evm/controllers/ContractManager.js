@@ -30,7 +30,7 @@ class ContractManager {
 		for (let index in contracts) {
 			const contract = contracts[index];
 			await this.#getContracts(contract, network, provider);
-			await wait(100);
+			await wait(2000);
 		}
 
 		console.log('initNetworkContracts:', network, 'done');
@@ -103,6 +103,7 @@ class ContractManager {
 
 		const min_tx_age = await governance.votedValuesMap('min_tx_age');
 		this.#addContract(meta, min_tx_age, 'Uint', 'min_tx_age');
+		await wait(1000);
 
 		const large_threshold = await governance.votedValuesMap('large_threshold');
 		this.#addContract(meta, large_threshold, 'Uint', 'large_threshold');
