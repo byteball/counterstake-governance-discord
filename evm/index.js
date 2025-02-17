@@ -21,8 +21,8 @@ function generateMetaForEventsInV1() {
 	}
 }
 
-function initNetwork(network, contractManager, contractManagerOfV1, bridges) {
-	const p = new Provider(network);
+function initNetwork(network, contractManager, contractManagerOfV1, bridges, enableSubscribeCheck) {
+	const p = new Provider(network, enableSubscribeCheck);
 	contractManager.onV1Ready(network, (contracts) => { // v1 only
 		contractManagerOfV1.setContracts(network, contracts);
 	});
@@ -46,7 +46,7 @@ async function init() {
 	initNetwork('Ethereum', contractManager, contractManagerOfV1, bridges);
 	initNetwork('BSC', contractManager, contractManagerOfV1, bridges);
 	initNetwork('Polygon', contractManager, contractManagerOfV1, bridges);
-	initNetwork('Kava', contractManager, contractManagerOfV1, bridges);
+	initNetwork('Kava', contractManager, contractManagerOfV1, bridges, true);
 }
 
 module.exports = {
