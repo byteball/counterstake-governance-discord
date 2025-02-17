@@ -5,7 +5,7 @@ const sleep = require('../../utils/sleep');
 
 const PING_INTERVAL = 5000;
 const PING_TIMEOUT = 15000;
-const CHECK_INTERVAL = 10000;
+const CHECK_INTERVAL = 15000;
 
 class Provider {
 	#network;
@@ -14,15 +14,12 @@ class Provider {
 	#keepAliveInterval;
 	#pingTimeout;
 	#connectCB;
-	
-	#enableSubscribeCheck = false;
 	#lastBlock = 0;
 	#lastBlockFromEvent = 0;
 	#lastBlockInterval;
 
-	constructor(network, enableSubscribeCheck = false) {
+	constructor(network) {
 		this.#network = network;
-		this.#enableSubscribeCheck = enableSubscribeCheck;
 		this.#url = conf.ws_nodes[network];
 		if (!this.#url) {
 			throw new Error(`Network ${network} not supported`);
@@ -50,11 +47,12 @@ class Provider {
 
 	#closeFromCheck() {
 		this.#provider._websocket.terminate();
+		clearInterval(this.#lastBlockInterval);
 		this.#lastBlock = 0;
 		this.#lastBlockFromEvent = 0;
 	}
 	
-	#startSubscribeCheck() {
+	#check() {
 		this.#lastBlockInterval = setInterval(async () => {
 			if (this.#lastBlock === this.#lastBlockFromEvent) {
 				console.log('check failed');
@@ -88,10 +86,7 @@ class Provider {
 			}, PING_TIMEOUT);
 		}, PING_INTERVAL);
 		this.#connectCB();
-		
-		if (this.#enableSubscribeCheck) {
-			this.#startSubscribeCheck();
-		}
+		this.#check();
 	}
 
 	#onPong() {
@@ -107,7 +102,6 @@ class Provider {
 		console.log(`[Provider[${this.#network}].ws_close]:`, code, message);
 		clearInterval(this.#keepAliveInterval)
 		clearTimeout(this.#pingTimeout)
-		clearInterval(this.#lastBlockInterval);
 		await sleep(5);
 		this.connect();
 	}
