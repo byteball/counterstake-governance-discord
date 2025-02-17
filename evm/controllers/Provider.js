@@ -5,6 +5,7 @@ const sleep = require('../../utils/sleep');
 
 const PING_INTERVAL = 5000;
 const PING_TIMEOUT = 15000;
+const CHECK_INTERVAL = 15000;
 
 class Provider {
 	#network;
@@ -13,6 +14,9 @@ class Provider {
 	#keepAliveInterval;
 	#pingTimeout;
 	#connectCB;
+	#lastBlock = 0;
+	#lastBlockFromEvent = 0;
+	#lastBlockInterval;
 
 	constructor(network) {
 		this.#network = network;
@@ -41,6 +45,25 @@ class Provider {
 		this.#createProvider();
 	}
 
+	#closeFromCheck() {
+		this.#provider._websocket.terminate();
+		clearInterval(this.#lastBlockInterval);
+		this.#lastBlock = 0;
+		this.#lastBlockFromEvent = 0;
+	}
+	
+	#check() {
+		this.#lastBlockInterval = setInterval(async () => {
+			if (this.#lastBlock === this.#lastBlockFromEvent) {
+				console.log('check failed');
+				this.#closeFromCheck();
+				return;
+			}
+			
+			this.#lastBlock = this.#lastBlockFromEvent;
+		}, CHECK_INTERVAL);
+	}
+
 	#createProvider() {
 		console.log(`[Provider[${this.#network}].ws] create provider`);
 		this.#provider = new ethers.providers.WebSocketProvider(this.#url);
@@ -48,16 +71,22 @@ class Provider {
 		this.#provider._websocket.on('close', this.#onClose.bind(this));
 		this.#provider._websocket.on('error', this.#onError.bind(this));
 		this.#provider._websocket.on('pong', this.#onPong.bind(this));
+		
+		this.#provider.on('block', (lastBlock) => {
+			this.#lastBlockFromEvent = lastBlock;
+		})
 	}
 
 	#onOpen() {
 		this.#keepAliveInterval = setInterval(() => {
 			this.#provider._websocket.ping()
 			this.#pingTimeout = setTimeout(() => {
+				console.log('[Provider[${this.#network}].ws] timeout');
 				this.#provider._websocket.terminate()
 			}, PING_TIMEOUT);
 		}, PING_INTERVAL);
 		this.#connectCB();
+		this.#check();
 	}
 
 	#onPong() {
