@@ -30,7 +30,10 @@ function initNetwork(network, contractManager, contractManagerOfV1, bridges, ena
 		contractManagerOfV1.setProvider(network, p.provider);
 		const contracts = bridges.getContractsByNetwork(network);
 		await contractManager.initNetworkContracts(contracts, network, p.provider);
-		contractManager.initHandlersByNetwork(network, p.provider);
+		contractManager.initHandlersByNetwork(network, p);
+		if (enableSubscribeCheck) {
+			p.startSubscribeCheck();
+		}
 		console.log(`[${network}]: connected`);
 	});
 }

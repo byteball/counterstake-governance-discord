@@ -3,9 +3,9 @@
 	"version": "0.1.0",
 	"dependencies": {
 		"aabot": "git+https://github.com/byteball/aabot.git",
-		"axios": "^0.27.2",
+		"axios": "^1.8.4",
 		"dotenv": "^8.2.0",
-		"ethers": "^5.6.8",
+		"ethers": "^5.8.0",
 		"governance_events": "git+https://github.com/byteball/governance_events.git",
 		"ocore": "git+https://github.com/byteball/ocore.git"
 	},
