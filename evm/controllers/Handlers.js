@@ -8,39 +8,59 @@ const addressHandlers = require("../eventHandlers/address");
 
 class Handlers {
 	static addGovernanceHandler(contract, provider) {
-		const c = new ethers.Contract(contract.address, getAbiByType('governance'), provider);
+		let c = new ethers.Contract(contract.address, getAbiByType('governance'), provider.provider);
 		c.on('Withdrawal', (...args) => {
 			governanceHandlers.withdrawal(contract, ...args);
+		});
+		
+		provider.events.once('close', () => {
+			c.removeAllListeners();
+			c = null;
 		});
 	}
 
 	static addUintHandler(contract, provider) {
-		const c = new ethers.Contract(contract.address, getAbiByType('Uint'), provider);
+		let c = new ethers.Contract(contract.address, getAbiByType('Uint'), provider.provider);
 		c.on('Vote', (...args) => {
 			uintHandlers.vote(contract, ...args);
 		});
 		c.on('Unvote', (...args) => {
-			uintHandlers.unvote(contract, provider, ...args);
+			uintHandlers.unvote(contract, provider.provider, ...args);
+		});
+		
+		provider.events.once('close', () => {
+			c.removeAllListeners();
+			c = null;
 		});
 	}
 
 	static addUintArrayHandler(contract, provider) {
-		const c = new ethers.Contract(contract.address, getAbiByType('UintArray'), provider);
+		let c = new ethers.Contract(contract.address, getAbiByType('UintArray'), provider.provider);
 		c.on('Vote', (...args) => {
 			uintArrayHandlers.vote(contract, ...args);
 		});
 		c.on('Unvote', (...args) => {
-			uintArrayHandlers.unvote(contract, provider, ...args);
+			uintArrayHandlers.unvote(contract, provider.provider, ...args);
+		});
+		
+		provider.events.once('close', () => {
+			c.removeAllListeners();
+			c = null;
 		});
 	}
 
 	static addAddressHandler(contract, provider) {
-		const c = new ethers.Contract(contract.address, getAbiByType('address'), provider);
+		let c = new ethers.Contract(contract.address, getAbiByType('address'), provider.provider);
 		c.on('Vote', (...args) => {
 			addressHandlers.vote(contract, ...args);
 		});
 		c.on('Unvote', (...args) => {
-			addressHandlers.unvote(contract, provider, ...args);
+			addressHandlers.unvote(contract, provider.provider, ...args);
+		});
+		
+		provider.events.once('close', () => {
+			c.removeAllListeners();
+			c = null;
 		});
 	}
 }
