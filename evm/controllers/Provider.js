@@ -69,10 +69,35 @@ class Provider {
 			this.#lastBlock = this.#lastBlockFromEvent;
 		}, CHECK_INTERVAL);
 	}
+	
+	#setupMessageInterceptor() {
+		const originalMessageHandler = this._provider._websocket.onmessage;
+	
+		this._provider._websocket.onmessage = (messageEvent) => {
+			try {
+				const result = JSON.parse(messageEvent.data);
+				
+				if (result && result.id !== undefined) {
+					const id = String(result.id);
+					const request = this._provider._requests[id];
+					if (!request) {
+						const errorData = result.error || result;
+						this.#onError(errorData);
+						return;
+					}
+				}
+				
+				originalMessageHandler(messageEvent);
+			} catch (error) {
+				this.#onError(error);
+			}
+		};
+	}
 
 	#createProvider() {
-		console.log(`[Provider[${this.#network}].ws] create provider`);
+		console.error(`[Provider[${this.#network}].ws] create provider`);
 		this._provider = new ethers.providers.WebSocketProvider(this.#url);
+		this.#setupMessageInterceptor();
 		this._provider._websocket.on('open', this.#onOpen.bind(this));
 		this._provider._websocket.on('close', this.#onClose.bind(this));
 		this._provider._websocket.on('error', this.#onError.bind(this));
@@ -99,7 +124,7 @@ class Provider {
 	}
 
 	#onError(error) {
-		console.log(`[Provider[${this.#network}].ws_error]:`, error);
+		console.error(`[Provider[${this.#network}].ws_error]:`, error);
 		this._provider.destroy();
 	}
 
