@@ -17,8 +17,8 @@ function vote(contract, who, arrValue, votes, total_votes, arrLeader, leader_tot
 		name: contract_name,
 		type: 'added_support',
 		leader_support: leader_total_votes.toString(),
-		leader_value: Formatter.format(contract_name, arrLeader.map(v => v.toNumber()), meta),
-		value: Formatter.format(contract_name, arrValue.map(v => v.toNumber()), meta),
+		leader_value: Formatter.format(contract_name, arrLeader.map(v => Number(v)), meta),
+		value: Formatter.format(contract_name, arrValue.map(v => Number(v)), meta),
 		support: total_votes.toString(),
 	}
 

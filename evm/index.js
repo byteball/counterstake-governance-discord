@@ -1,4 +1,4 @@
-const { utils } = require('ethers');
+const { ethers } = require('ethers');
 
 const Provider = require('./controllers/Provider');
 const Bridges = require('./controllers/Bridges');
@@ -13,16 +13,28 @@ function generateMetaForEventsInV1() {
 		if (!t.events.length) continue;
 
 		const interfaces = t.events.map(v => v.code);
-		t.iface = new utils.Interface(interfaces);
+		t.iface = new ethers.Interface(interfaces);
 		t.events = t.events.map(v => {
-			v.sighash = t.iface.getSighash(v.name);
+			try {
+				const functionFragment = t.iface.getFunction(v.name);
+				if (functionFragment) {
+					v.sighash = functionFragment.selector;
+				} else {
+					console.error(`Function ${v.name} not found in interface, calculating selector manually`);
+					const signature = `${v.name}()`;
+					v.sighash = ethers.id(signature).substring(0, 10);
+				}
+			} catch (e) {
+				console.error(e);
+				throw `Error getting selector for ${v.name}`;
+			}
 			return v;
 		});
 	}
 }
 
 function initNetwork(network, contractManager, contractManagerOfV1, bridges, enableSubscribeCheck) {
-	const p = new Provider(network, enableSubscribeCheck);
+	const p = new Provider(network);
 	contractManager.onV1Ready(network, (contracts) => { // v1 only
 		contractManagerOfV1.setContracts(network, contracts);
 	});

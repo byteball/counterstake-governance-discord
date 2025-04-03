@@ -7,7 +7,7 @@ let eventsForV1 = {
 			},
 			{
 				name: 'deposit(address from, uint amount)',
-				code: 'function deposit(address from, uint amount) nonReentrant payable public'
+				code: 'function deposit(address from, uint amount) payable public'
 			},
 			{
 				name: 'withdraw()',
@@ -15,7 +15,7 @@ let eventsForV1 = {
 			},
 			{
 				name: 'withdraw(uint amount)',
-				code: 'function withdraw(uint amount) nonReentrant public'
+				code: 'function withdraw(uint amount) public'
 			},
 		]
 	},
@@ -43,7 +43,7 @@ let eventsForV1 = {
 			},
 			{
 				name: 'voteAndDeposit',
-				code: 'function voteAndDeposit(uint256[] value, uint256 amount) nonReentrant payable external',
+				code: 'function voteAndDeposit(uint256[] value, uint256 amount) payable external',
 			},
 			{
 				name: 'unvote',
