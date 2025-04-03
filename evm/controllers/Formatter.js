@@ -1,4 +1,4 @@
-const { ethers, BigNumber } = require('ethers');
+const { ethers } = require('ethers');
 
 class Formatter {
 	static format(name, value, meta) {
@@ -15,7 +15,7 @@ class Formatter {
 		}
 
 		if (["min_stake", "large_threshold"].includes(name)) {
-			const amount = ethers.utils.formatUnits(BigNumber.from(value), meta.decimals);
+			const amount = ethers.formatUnits(value, meta.decimals);
 			return `${amount} ${meta.symbol}`
 		}
 

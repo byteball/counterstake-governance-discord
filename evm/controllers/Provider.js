@@ -4,28 +4,22 @@ const EventEmitter = require('node:events');
 
 const sleep = require('../../utils/sleep');
 
-const PING_INTERVAL = 5000;
-const PING_TIMEOUT = 15000;
 const CHECK_INTERVAL = 10000;
 
 class Provider {
 	#network;
 	#url;
-	#keepAliveInterval;
-	#pingTimeout;
 	#connectCB;
 	
-	#enableSubscribeCheck = false;
 	#lastBlock = 0;
 	#lastBlockFromEvent = 0;
 	#lastBlockInterval;
 	
-	_provider;
+	_provider = null;
 	events = new EventEmitter();
 
-	constructor(network, enableSubscribeCheck = false) {
+	constructor(network) {
 		this.#network = network;
-		this.#enableSubscribeCheck = enableSubscribeCheck;
 		this.#url = conf.ws_nodes[network];
 		this.events.setMaxListeners(100);
 		if (!this.#url) {
@@ -70,38 +64,21 @@ class Provider {
 		}, CHECK_INTERVAL);
 	}
 	
-	#setupMessageInterceptor() {
-		const originalMessageHandler = this._provider._websocket.onmessage;
-	
-		this._provider._websocket.onmessage = (messageEvent) => {
-			try {
-				const result = JSON.parse(messageEvent.data);
-				
-				if (result && result.id !== undefined) {
-					const id = String(result.id);
-					const request = this._provider._requests[id];
-					if (!request) {
-						const errorData = result.error || result;
-						this.#onError(errorData);
-						return;
-					}
-				}
-				
-				originalMessageHandler(messageEvent);
-			} catch (error) {
-				this.#onError(error);
-			}
-		};
-	}
-
 	#createProvider() {
-		console.error(`[Provider[${this.#network}].ws] create provider`);
-		this._provider = new ethers.providers.WebSocketProvider(this.#url);
-		this.#setupMessageInterceptor();
-		this._provider._websocket.on('open', this.#onOpen.bind(this));
-		this._provider._websocket.on('close', this.#onClose.bind(this));
-		this._provider._websocket.on('error', this.#onError.bind(this));
-		this._provider._websocket.on('pong', this.#onPong.bind(this));
+		console.log(`[Provider[${this.#network}].ws] create provider`);
+		this._provider = new ethers.WebSocketProvider(this.#url);
+
+
+		this._provider.websocket.on('open', () => {
+			this.#onOpen();
+		});
+		this._provider.websocket.on('close', (code) => {
+			this.#onClose(code);
+		});
+		this._provider.websocket.on('error', (error) => {
+			this.#onError(error);
+		});
+		
 		
 		this._provider.on('block', (lastBlock) => {
 			this.#lastBlockFromEvent = lastBlock;
@@ -109,18 +86,7 @@ class Provider {
 	}
 
 	#onOpen() {
-		this.#keepAliveInterval = setInterval(() => {
-			this._provider._websocket.ping()
-			this.#pingTimeout = setTimeout(() => {
-				console.log(`[Provider[${this.#network}].ws] timeout`);
-				this._provider.destroy();
-			}, PING_TIMEOUT);
-		}, PING_INTERVAL);
 		this.#connectCB();
-	}
-
-	#onPong() {
-		clearInterval(this.#pingTimeout);
 	}
 
 	#onError(error) {
@@ -130,14 +96,9 @@ class Provider {
 
 	async #onClose(code) {
 		console.error(`[Provider[${this.#network}].ws_close]:`, code);
-		this._provider._websocket.removeAllListeners();
-		this._provider.removeAllListeners();
-		delete this._provider; 
 		this.events.emit('close');
-		clearInterval(this.#keepAliveInterval)
-		clearTimeout(this.#pingTimeout)
 		clearInterval(this.#lastBlockInterval);
-		await sleep(5);
+		await sleep(2);
 		this.connect();
 	}
 }

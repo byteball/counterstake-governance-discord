@@ -27,16 +27,19 @@ class DataFetcher {
 				break;
 			}
 		}
-		const leader_support = await contract.votesByValue(ethers.utils.solidityKeccak256(['uint[]'], [leader_value]));
+		const encoded = ethers.AbiCoder.defaultAbiCoder().encode(['uint[]'], [leader_value]);
+		const leader_support = await contract.votesByValue(ethers.keccak256(encoded));
+
 		let support = null;
 		let value = null;
 		if (data) {
-			support = await contract.votesByValue(ethers.utils.solidityKeccak256(['uint[]'], [data.value]));
-			value = data.value.map(v => v.toNumber());
+			const dataEncoded = ethers.AbiCoder.defaultAbiCoder().encode(['uint[]'], [data.value]);
+			support = await contract.votesByValue(ethers.keccak256(dataEncoded));
+			value = data.value.map(v => Number(v));
 		}
 
 		return {
-			leader_value: leader_value.map(v => v.toNumber()),
+			leader_value: leader_value.map(v => Number(v)),
 			leader_support,
 			support,
 			value,

@@ -104,7 +104,7 @@ class ContractRunnerForV1 {
 			}
 
 			event.type = 'deposit';
-			event.amount = transactions[0].value;
+			event.amount = transactions[0].value.toString();
 
 			return event;
 		}
@@ -117,7 +117,7 @@ class ContractRunnerForV1 {
 			}
 
 			event.type = 'withdraw';
-			event.amount = transactions[0].value;
+			event.amount = transactions[0].value.toString();
 
 			return event;
 		}
