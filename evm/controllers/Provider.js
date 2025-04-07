@@ -45,24 +45,23 @@ class Provider {
 		}
 		this.#createProvider();
 	}
-
-	#closeFromCheck() {
-		this.#lastBlock = 0;
-		this.#lastBlockFromEvent = 0;
-		if (this._provider.destroyed) { return; }
-		this._provider.destroy();
-	}
 	
 	startSubscribeCheck() {
 		this.#lastBlockInterval = setInterval(async () => {
 			if (this.#lastBlock === this.#lastBlockFromEvent) {
 				console.error('Subscribe check failed');
-				this.#closeFromCheck();
+				this.close();
 				return;
 			}
 			
 			this.#lastBlock = this.#lastBlockFromEvent;
 		}, CHECK_INTERVAL);
+	}
+	
+	close() {
+		if (this._provider.destroyed) return;
+		this._provider.websocket.removeAllListeners();
+		this._provider.destroy();
 	}
 	
 	async #createProvider() {
@@ -90,14 +89,15 @@ class Provider {
 
 	#onError(error) {
 		console.error(`[Provider[${this.#network}].ws_error]:`, error);
-		if (this._provider.destroyed) { return; }
-		this._provider.destroy();
+		this.close();
 	}
 
 	async #onClose(code) {
 		console.error(`[Provider[${this.#network}].ws_close]:`, code);
 		this.events.emit('close');
 		clearInterval(this.#lastBlockInterval);
+		this.#lastBlock = 0;
+		this.#lastBlockFromEvent = 0;
 		await sleep(2);
 		this.connect();
 	}
