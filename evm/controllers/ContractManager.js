@@ -27,10 +27,25 @@ class ContractManager {
 			return;
 		}
 
-		for (let index in contracts) {
-			const contract = contracts[index];
-			await this.#getContracts(contract, network, provider);
-			await wait(2000);
+		try {
+			for (let index in contracts) {
+				const contract = contracts[index];
+				await this.#setContracts(contract, network, provider);
+				await wait(2000);
+			}
+		} catch (e) {
+			if (e?.message &&
+				(
+					e.message.toLowerCase().includes('internal error') ||
+					e.message.toLowerCase().includes('timeout')
+				)
+			) {
+				console.error('Error initializing contracts:', e.message, '. try reconnect');
+				provider.close();
+				return;
+			}
+			
+			throw e;
 		}
 
 		console.log('initNetworkContracts:', network, 'done');
@@ -78,7 +93,7 @@ class ContractManager {
 		});
 	}
 
-	async #getContracts(contract, network, provider) {
+	async #setContracts(contract, network, provider) {
 		const { type, aa, aa_version, symbol, decimals } = contract;
 
 		const isImport = type === 'import';
