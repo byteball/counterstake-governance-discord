@@ -2,17 +2,23 @@ const conf = require('ocore/conf');
 const axios = require("axios");
 const sleep = require("../../utils/sleep");
 
-function getUrl(chain, address, lastBlock) {
-	const q = `api?module=account&action=txlist&address=${address}&startblock=${lastBlock}`;
+function getChainId(chain) {
 	switch (chain) {
 		case 'Ethereum':
-			return `https://api${process.env.testnet ? '-rinkeby' : ''}.etherscan.io/${q}&apikey=${conf.scan_api_keys.Ethereum}`;
+			return process.env.testnet ? 4 : 1;
 		case 'BSC':
-			return `https://api${process.env.testnet ? '-testnet' : ''}.bscscan.com/${q}&apikey=${conf.scan_api_keys.BSC}`;
+			return process.env.testnet ? 97 : 56;
 		case 'Polygon':
-			return `https://api${process.env.testnet ? '-testnet' : ''}.polygonscan.com/${q}&apikey=${conf.scan_api_keys.Polygon}`;
+			return process.env.testnet ? 80001 : 137;
+		case 'Kava':
+			return process.env.testnet ? 2221 : 2222;
 	}
-	throw Error(`getNormalTransactions: unknown chain ${chain}`);
+	throw Error(`getChainId: unknown chain ${chain}`);
+}
+
+function getUrl(chain, address, lastBlock) {
+	const chainId = getChainId(chain);
+	return `https://api.etherscan.io/v2/api?chainid=${chainId}&module=account&action=txlist&address=${address}&startblock=${lastBlock}&apikey=${process.env.eth_scan_api_key}`;
 }
 
 async function getNormalTransactions(chain, address, lastBlock, r = 0) {
@@ -25,14 +31,14 @@ async function getNormalTransactions(chain, address, lastBlock, r = 0) {
 		if (r.data.message === 'NOTOK' && r.data.result === 'Max rate limit reached') {
 			throw 'Max rate limit reached';
 		}
-		return []
+		return Error(`bad response from etherscan for ${chain} ${address} ${lastBlock}: ${JSON.stringify(r.data)}`);
 	} catch (e) {
 		console.log('getNormalTransactions error', chain, address, lastBlock, r, e);
 		if (r < 5) {
-			await sleep(10);
+			await sleep(1000);
 			return getNormalTransactions(chain, address, lastBlock, ++r);
 		}
-		return [];
+		throw e;
 	}
 }
 
