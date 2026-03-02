@@ -25,13 +25,13 @@ async function getNormalTransactions(chain, address, lastBlock, r = 0) {
 	const url = getUrl(chain, address, lastBlock);
 	try {
 		const r = await axios.get(url);
-		if (r.data.message === 'OK') {
+		if (Array.isArray(r.data.result)) {
 			return r.data.result;
 		}
-		if (r.data.message === 'NOTOK' && r.data.result === 'Max rate limit reached') {
+		if (r.data.message === 'NOTOK') {
 			throw 'Max rate limit reached';
 		}
-		return Error(`bad response from etherscan for ${chain} ${address} ${lastBlock}: ${JSON.stringify(r.data)}`);
+		throw Error(`bad response from etherscan for ${chain} ${address} ${lastBlock}: ${JSON.stringify(r.data)}`);
 	} catch (e) {
 		console.log('getNormalTransactions error', chain, address, lastBlock, r, e);
 		if (r < 5) {
