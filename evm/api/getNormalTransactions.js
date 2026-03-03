@@ -48,7 +48,7 @@ async function getNormalTransactions(chain, address, lastBlock, r = 0) {
 	} catch (e) {
 		console.log('getNormalTransactions error', chain, address, lastBlock, r, e);
 		if (r < 5) {
-			await sleep(1000);
+			await sleep(1);
 			return getNormalTransactions(chain, address, lastBlock, ++r);
 		}
 		throw e;

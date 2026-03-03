@@ -32,7 +32,7 @@ async function getInternalTransactions(chain, hash, r = 0) {
 	} catch (e) {
 		console.log('getInternalTransactions error', chain, hash, r, e);
 		if (r < 5) {
-			await sleep(10);
+			await sleep(1);
 			return getInternalTransactions(chain, hash, ++r);
 		}
 		throw e;

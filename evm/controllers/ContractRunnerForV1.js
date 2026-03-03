@@ -75,7 +75,7 @@ class ContractRunnerForV1 {
 			console.log('getTransactions error:', e);
 			if (!r || r <= 2) {
 				console.log('repeat getTransactions', chain, address, lastBlock, r);
-				await sleep(20);
+				await sleep(2);
 				return this.#getTransactions(chain, address, lastBlock, !r ? 1 : ++r);
 			}
 			throw e;
