@@ -16,22 +16,35 @@ function getChainId(chain) {
 	throw Error(`getChainId: unknown chain ${chain}`);
 }
 
+function getMoralisChainName(chain) {
+	switch (chain) {
+		case 'Ethereum':
+			return process.env.testnet ? 'rinkeby' : 'eth';
+		case 'BSC':
+			return process.env.testnet ? 'bsc testnet' : 'bsc';
+		case 'Polygon':
+			return process.env.testnet ? 'mumbai' : 'polygon';
+	}
+	throw Error(`getMoralisChainName: unknown chain ${chain}`);
+}
+
 function getUrl(chain, address, lastBlock) {
-	const chainId = getChainId(chain);
-	return `https://api.etherscan.io/v2/api?chainid=${chainId}&module=account&action=txlist&address=${address}&startblock=${lastBlock}&apikey=${process.env.eth_scan_api_key}`;
+	const chainName = getMoralisChainName(chain);
+	return `https://deep-index.moralis.io/api/v2.2/wallets/${address}/history?chain=${chainName}&order=ASC&limit=100&include_internal_transactions=true&from_block=${lastBlock}`;
 }
 
 async function getNormalTransactions(chain, address, lastBlock, r = 0) {
 	const url = getUrl(chain, address, lastBlock);
 	try {
-		const r = await axios.get(url);
+		const r = await axios.get(url, {
+			headers: {
+				'X-API-Key': process.env.moralis_api_key,
+			}
+		});
 		if (Array.isArray(r.data.result)) {
 			return r.data.result;
 		}
-		if (r.data.message === 'NOTOK') {
-			throw 'Max rate limit reached';
-		}
-		throw Error(`bad response from etherscan for ${chain} ${address} ${lastBlock}: ${JSON.stringify(r.data)}`);
+		throw Error(`bad response from moralis for ${chain} ${address} ${lastBlock}: ${JSON.stringify(r.data)}`);
 	} catch (e) {
 		console.log('getNormalTransactions error', chain, address, lastBlock, r, e);
 		if (r < 5) {

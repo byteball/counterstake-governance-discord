@@ -28,9 +28,6 @@ async function getInternalTransactions(chain, hash, r = 0) {
 		if (Array.isArray(r.data.result)) {
 			return r.data.result;
 		}
-		if (r.data.message === 'NOTOK') {
-			throw 'Max rate limit reached';
-		}
 		throw Error(`bad response from etherscan for ${chain} ${hash}: ${JSON.stringify(r.data)}`);
 	} catch (e) {
 		console.log('getInternalTransactions error', chain, hash, r, e);
