@@ -72,13 +72,13 @@ class ContractRunnerForV1 {
 			const transactions = await getNormalTransactions(chain, address, lastBlock);
 			return transactions.filter(v => v.to === address.toLowerCase()).reverse();
 		} catch (e) {
+			console.log('getTransactions error:', e);
 			if (!r || r <= 2) {
 				console.log('repeat getTransactions', chain, address, lastBlock, r);
-				await sleep(20);
+				await sleep(2);
 				return this.#getTransactions(chain, address, lastBlock, !r ? 1 : ++r);
 			}
-			console.log('getTransactions error:', e);
-			return [];
+			throw e;
 		}
 	}
 
