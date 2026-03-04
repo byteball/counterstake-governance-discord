@@ -70,7 +70,7 @@ class ContractRunnerForV1 {
 	async #getTransactions(chain, address, lastBlock, r = 0) {
 		try {
 			const transactions = await getNormalTransactions(chain, address, lastBlock);
-			return transactions.filter(v => v.to === address.toLowerCase()).reverse();
+			return transactions.filter(v => v.to_address === address.toLowerCase()).reverse();
 		} catch (e) {
 			console.log('getTransactions error:', e);
 			if (!r || r <= 2) {
