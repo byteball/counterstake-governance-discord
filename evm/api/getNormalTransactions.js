@@ -30,7 +30,7 @@ function getMoralisChainName(chain) {
 
 function getUrl(chain, address, lastBlock) {
 	const chainName = getMoralisChainName(chain);
-	return `https://deep-index.moralis.io/api/v2.2/${address}?chain=${chainName}&order=ASC&limit=100&include=internal_transactions&from_block=${lastBlock}`;
+	return `https://deep-index.moralis.io/api/v2.2/${address}?chain=${chainName}&order=ASC&limit=100&from_block=${lastBlock}`;
 }
 
 async function getNormalTransactions(chain, address, lastBlock, r = 0) {

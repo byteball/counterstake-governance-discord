@@ -7,30 +7,44 @@ const { getAbiByType } = require('../abi/getAbiByType');
 const { getNormalTransactions } = require('../api/getNormalTransactions');
 const { getInternalTransactions } = require('../api/getInternalTransactions');
 const { eventsForV1 } = require('../eventsForV1');
+const GovernanceEventDedupe = require('../../db/GovernanceEventDedupe');
+const { withRateLimitRetry } = require('../utils/withRateLimitRetry');
+const { getRangeByStartTimestamp, SECONDS_IN_DAY } = require('../utils/historyRange');
 const DataFetcher = require('./DataFetcher');
 const Formatter = require('./Formatter');
 const Discord = require("./Discord");
+
+const DEFAULT_BOOTSTRAP_LOOKBACK_DAYS = 7;
 
 class ContractRunnerForV1 {
 	#contracts = {};
 	#providers = {};
 	#intervalInMinutes;
 	#intervalInitialized = false;
+	#scanStartTimestamp;
+	#avgBlockTimeSeconds;
+	#bootstrapStartBlocks = {};
 
-	constructor(intervalInMinutes = 30) {
+	constructor(intervalInMinutes = 30, options = {}) {
 		this.#intervalInMinutes = intervalInMinutes;
+		this.#scanStartTimestamp = options.scanStartTimestamp !== null
+			&& options.scanStartTimestamp !== undefined
+			&& Number.isFinite(Number(options.scanStartTimestamp))
+			? Number(options.scanStartTimestamp)
+			: null;
+		this.#avgBlockTimeSeconds = options.avgBlockTimeSeconds || {};
 	}
 
 	static #getNameAndDataFromInput(input, type) {
 		const metaForDecode = eventsForV1[type];
 		if (!metaForDecode) {
-			console.log('type not found', type, input);
+			console.log(`[ContractRunnerForV1] unsupported contract type ${type}`);
 			return { name: null, data: null };
 		}
 
 		const event = metaForDecode.events.find(v => input.startsWith(v.sighash));
 		if (!event) {
-			console.log('event not found', type, input);
+			console.log(`[ContractRunnerForV1] unsupported input for type ${type}`);
 			return { name: null, data: null };
 		}
 
@@ -50,6 +64,12 @@ class ContractRunnerForV1 {
 		this.#delayedExec();
 	}
 
+	#scheduleExec() {
+		this.#exec().catch((error) => {
+			console.error('[ContractRunnerForV1] scheduled execution failed', error);
+		});
+	}
+
 	async #delayedExec(timeInSeconds = 30) {
 		const unlock = await mutex.lockOrSkip('ContractManagerOfV1.delayedExec');
 		if (!unlock) {
@@ -57,10 +77,12 @@ class ContractRunnerForV1 {
 		}
 
 		await sleep(timeInSeconds);
-		this.#exec();
+		this.#scheduleExec();
 
 		if (!this.#intervalInitialized) {
-			setInterval(this.#exec.bind(this), this.#intervalInMinutes * 60 * 1000);
+			setInterval(() => {
+				this.#scheduleExec();
+			}, this.#intervalInMinutes * 60 * 1000);
 			this.#intervalInitialized = true;
 		}
 
@@ -70,16 +92,59 @@ class ContractRunnerForV1 {
 	async #getTransactions(chain, address, lastBlock, r = 0) {
 		try {
 			const transactions = await getNormalTransactions(chain, address, lastBlock);
-			return transactions.filter(v => v.to_address === address.toLowerCase()).reverse();
+			return transactions.filter(v => v.to_address === address.toLowerCase());
 		} catch (e) {
-			console.log('getTransactions error:', e);
 			if (!r || r <= 2) {
-				console.log('repeat getTransactions', chain, address, lastBlock, r);
 				await sleep(2);
 				return this.#getTransactions(chain, address, lastBlock, !r ? 1 : ++r);
 			}
 			throw e;
 		}
+	}
+
+	#getBootstrapStartTimestamp() {
+		if (this.#scanStartTimestamp !== null)
+			return this.#scanStartTimestamp;
+
+		return Math.floor(Date.now() / 1000) - (DEFAULT_BOOTSTRAP_LOOKBACK_DAYS * SECONDS_IN_DAY);
+	}
+
+	async #getBootstrapStartBlock(network) {
+		const startTimestamp = this.#getBootstrapStartTimestamp();
+		const cacheKey = `${network}:${startTimestamp}`;
+		if (this.#bootstrapStartBlocks[cacheKey] !== undefined)
+			return this.#bootstrapStartBlocks[cacheKey];
+
+		const provider = this.#providers[network];
+		if (!provider)
+			throw new Error(`[ContractRunnerForV1] missing provider for ${network} bootstrap scan`);
+
+		const avgBlockTimeSeconds = this.#avgBlockTimeSeconds[network];
+		const range = await getRangeByStartTimestamp(provider, {
+			startTimestamp,
+			avgBlockTimeSeconds,
+		});
+		if (!range)
+			return 0;
+
+		this.#bootstrapStartBlocks[cacheKey] = range.fromBlock;
+		return range.fromBlock;
+	}
+
+	static #getTransactionTimestamp(transaction) {
+		const rawTimestamp = transaction?.block_timestamp;
+		if (rawTimestamp === undefined || rawTimestamp === null || rawTimestamp === '')
+			return null;
+
+		const numericTimestamp = Number(rawTimestamp);
+		if (Number.isFinite(numericTimestamp))
+			return numericTimestamp > 1e12 ? Math.floor(numericTimestamp / 1000) : numericTimestamp;
+
+		const parsedTimestamp = Date.parse(rawTimestamp);
+		if (!Number.isFinite(parsedTimestamp))
+			return null;
+
+		return Math.floor(parsedTimestamp / 1000);
 	}
 
 	async #prepareEventFromInput(network, transaction, contract) {
@@ -99,7 +164,7 @@ class ContractRunnerForV1 {
 		if (name.startsWith('deposit')) {
 			const transactions = await getInternalTransactions(meta.network, hash);
 			if (!transactions.length) {
-				console.log('transactions not found(deposit)', meta.network, hash);
+				console.log(`[ContractRunnerForV1] missing deposit transfers for ${meta.network}:${hash}`);
 				return 'err';
 			}
 
@@ -112,7 +177,7 @@ class ContractRunnerForV1 {
 		if (name.startsWith("withdraw")) {
 			const transactions = await getInternalTransactions(meta.network, hash);
 			if (!transactions.length) {
-				console.log('transactions not found(withdraw)', meta.network, hash);
+				console.log(`[ContractRunnerForV1] missing withdrawal transfers for ${meta.network}:${hash}`);
 				return 'err';
 			}
 
@@ -124,7 +189,10 @@ class ContractRunnerForV1 {
 
 		if (name === "voteAndDeposit" || name === "vote") {
 			const governance = new ethers.Contract(meta.governance_address, getAbiByType('governance'), this.#providers[network]);
-			const balance = await governance.balances(from_address);
+			const balance = await withRateLimitRetry(
+				`ContractRunnerForV1.balances:${meta.network}:${meta.governance_address}`,
+				() => governance.balances(from_address)
+			);
 
 			const c = new ethers.Contract(address, getAbiByType(type), this.#providers[network]);
 			const {
@@ -132,7 +200,9 @@ class ContractRunnerForV1 {
 				leader_support,
 				support,
 				value,
-			} = type === 'UintArray' ? await DataFetcher.fetchVotedArrayData(c, data) : await DataFetcher.fetchVotedData(c, data);
+			} = type === 'UintArray'
+				? await DataFetcher.fetchVotedArrayData(c, data)
+				: await DataFetcher.fetchVotedData(c, data);
 
 			event.type = "added_support";
 			event.added_support = balance.toString();
@@ -149,7 +219,9 @@ class ContractRunnerForV1 {
 			const {
 				leader_value,
 				leader_support,
-			} = type === 'UintArray' ? await DataFetcher.fetchVotedArrayData(c) : await DataFetcher.fetchVotedData(c);
+			} = type === 'UintArray'
+				? await DataFetcher.fetchVotedArrayData(c, null)
+				: await DataFetcher.fetchVotedData(c, null);
 			event.type = 'removed_support';
 			event.leader_support = leader_support.toString();
 			event.leader_value = Formatter.format(contract_name, leader_value, meta);
@@ -160,10 +232,9 @@ class ContractRunnerForV1 {
 
 	async #exec() {
 		const unlock = await mutex.lockOrSkip('ContractManagerOfV1.exec');
-		if (!unlock) {
+		if (!unlock)
 			return;
-		}
-		console.log('exec start', (new Date()).toISOString());
+
 		for (let network in this.#contracts) {
 			const c = this.#contracts[network];
 			if (!c || !c.length) continue;
@@ -171,36 +242,52 @@ class ContractRunnerForV1 {
 			for (let i = 0; i < c.length; i++) {
 				const contract = c[i];
 				const meta = contract.meta;
-				const lastBlock = await Web3_addresses.getLastBlockByAddress(contract.address);
+				const cursorState = await Web3_addresses.getLastBlockState(meta.network, contract.address);
+				let lastBlock = cursorState.lastBlock;
+				const bootstrapStartTimestamp = cursorState.exists ? null : this.#getBootstrapStartTimestamp();
+				if (!cursorState.exists) {
+					lastBlock = await this.#getBootstrapStartBlock(network);
+					await Web3_addresses.setLastBlock(meta.network, contract.address, lastBlock);
+				}
 				
-				console.log('contract v1: ', contract.address);
 				const transactions = await this.#getTransactions(network, contract.address, lastBlock);
-				console.log('transactions:', transactions.length);
 
 				if (transactions.length) {
 					let lb = 0;
 					for (let j = 0; j < transactions.length; j++) {
 						const transaction = transactions[j];
+						const transactionTimestamp = ContractRunnerForV1.#getTransactionTimestamp(transaction);
+						if (bootstrapStartTimestamp !== null) {
+							if (transactionTimestamp === null)
+								throw new Error(`[ContractRunnerForV1] missing block_timestamp for ${meta.network}:${transaction.hash}`);
+
+							if (transactionTimestamp < bootstrapStartTimestamp) {
+								lb = transaction.block_number;
+								continue;
+							}
+						}
+
 						const event = await this.#prepareEventFromInput(network, transaction, contract);
-						console.log('event:', event, transaction.hash);
 						if (!event) continue;
 						if (event === 'err') break;
-						Discord.announceEvent(meta, event);
+						const dedupeRef = GovernanceEventDedupe.createEvmTxRef({
+							network: meta.network,
+							contractAddress: contract.address,
+							txHash: transaction.hash,
+							source: 'evm_v1_tx',
+							eventType: event.type,
+						});
+						await Discord.announceEvent(meta, event, dedupeRef);
 						lb = transaction.block_number;
 					}
 
 					if (lb) {
-						console.log('set new last block', Number(lb) + 1);
-						await Web3_addresses.setLastBlockByAddress(contract.address, Number(lb) + 1);
-					} else {
-						console.log('number of the last block has not been changed');
+						await Web3_addresses.setLastBlock(meta.network, contract.address, Number(lb) + 1);
 					}
 				}
-				console.log('contract v1 done');
 				await sleep(2);
 			}
 		}
-		console.log('exec done', (new Date()).toISOString());
 		unlock();
 	}
 }

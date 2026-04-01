@@ -6,11 +6,23 @@ const uintHandlers = require("../eventHandlers/uint");
 const uintArrayHandlers = require("../eventHandlers/uintArray");
 const addressHandlers = require("../eventHandlers/address");
 
+function runAsyncHandler(label, fn, options = {}) {
+	Promise.resolve()
+		.then(fn)
+		.catch((error) => {
+			console.error(`[Handlers] ${label} failed`, error);
+			options.onError?.(error, label);
+		});
+}
+
 class Handlers {
-	static addGovernanceHandler(contract, provider) {
+	static addGovernanceHandler(contract, provider, options = {}) {
 		let c = new ethers.Contract(contract.address, getAbiByType('governance'), provider.provider);
+		c.on('Deposit', (...args) => {
+			runAsyncHandler(`${contract.meta.network}:${contract.address}:Deposit`, () => governanceHandlers.deposit(contract, ...args, { provider: provider.provider }), options);
+		});
 		c.on('Withdrawal', (...args) => {
-			governanceHandlers.withdrawal(contract, ...args);
+			runAsyncHandler(`${contract.meta.network}:${contract.address}:Withdrawal`, () => governanceHandlers.withdrawal(contract, ...args, { provider: provider.provider }), options);
 		});
 		
 		provider.events.once('close', () => {
@@ -19,13 +31,16 @@ class Handlers {
 		});
 	}
 
-	static addUintHandler(contract, provider) {
+	static addUintHandler(contract, provider, options = {}) {
 		let c = new ethers.Contract(contract.address, getAbiByType('Uint'), provider.provider);
 		c.on('Vote', (...args) => {
-			uintHandlers.vote(contract, ...args);
+			runAsyncHandler(`${contract.meta.network}:${contract.address}:Vote`, () => uintHandlers.vote(contract, ...args, { provider: provider.provider }), options);
+		});
+		c.on('Commit', (...args) => {
+			runAsyncHandler(`${contract.meta.network}:${contract.address}:Commit`, () => uintHandlers.commit(contract, ...args, { provider: provider.provider }), options);
 		});
 		c.on('Unvote', (...args) => {
-			uintHandlers.unvote(contract, provider.provider, ...args);
+			runAsyncHandler(`${contract.meta.network}:${contract.address}:Unvote`, () => uintHandlers.unvote(contract, provider.provider, ...args, { provider: provider.provider }), options);
 		});
 		
 		provider.events.once('close', () => {
@@ -34,13 +49,16 @@ class Handlers {
 		});
 	}
 
-	static addUintArrayHandler(contract, provider) {
+	static addUintArrayHandler(contract, provider, options = {}) {
 		let c = new ethers.Contract(contract.address, getAbiByType('UintArray'), provider.provider);
 		c.on('Vote', (...args) => {
-			uintArrayHandlers.vote(contract, ...args);
+			runAsyncHandler(`${contract.meta.network}:${contract.address}:Vote`, () => uintArrayHandlers.vote(contract, ...args, { provider: provider.provider }), options);
+		});
+		c.on('Commit', (...args) => {
+			runAsyncHandler(`${contract.meta.network}:${contract.address}:Commit`, () => uintArrayHandlers.commit(contract, ...args, { provider: provider.provider }), options);
 		});
 		c.on('Unvote', (...args) => {
-			uintArrayHandlers.unvote(contract, provider.provider, ...args);
+			runAsyncHandler(`${contract.meta.network}:${contract.address}:Unvote`, () => uintArrayHandlers.unvote(contract, provider.provider, ...args, { provider: provider.provider }), options);
 		});
 		
 		provider.events.once('close', () => {
@@ -49,13 +67,16 @@ class Handlers {
 		});
 	}
 
-	static addAddressHandler(contract, provider) {
+	static addAddressHandler(contract, provider, options = {}) {
 		let c = new ethers.Contract(contract.address, getAbiByType('address'), provider.provider);
 		c.on('Vote', (...args) => {
-			addressHandlers.vote(contract, ...args);
+			runAsyncHandler(`${contract.meta.network}:${contract.address}:Vote`, () => addressHandlers.vote(contract, ...args, { provider: provider.provider }), options);
+		});
+		c.on('Commit', (...args) => {
+			runAsyncHandler(`${contract.meta.network}:${contract.address}:Commit`, () => addressHandlers.commit(contract, ...args, { provider: provider.provider }), options);
 		});
 		c.on('Unvote', (...args) => {
-			addressHandlers.unvote(contract, provider.provider, ...args);
+			runAsyncHandler(`${contract.meta.network}:${contract.address}:Unvote`, () => addressHandlers.unvote(contract, provider.provider, ...args, { provider: provider.provider }), options);
 		});
 		
 		provider.events.once('close', () => {

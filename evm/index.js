@@ -4,6 +4,8 @@ const Provider = require('./controllers/Provider');
 const Bridges = require('./controllers/Bridges');
 const ContractManager = require('./controllers/ContractManager');
 const ContractRunnerForV1 = require('./controllers/ContractRunnerForV1');
+const V1_1HistoricalChecker = require('./controllers/V1_1HistoricalChecker');
+const conf = require('ocore/conf');
 
 const { eventsForV1 } = require('./eventsForV1');
 
@@ -35,14 +37,36 @@ function generateMetaForEventsInV1() {
 
 function initNetwork(network, contractManager, contractManagerOfV1, bridges, enableSubscribeCheck) {
 	const p = new Provider(network);
+	const v1_1HistoricalChecker = new V1_1HistoricalChecker({
+		lookbackDays: conf.evm_v1_1_history_days,
+		intervalHours: conf.evm_v1_1_history_interval_hours,
+		confirmations: conf.evm_v1_1_history_confirmations,
+		maxLogRangeBlocks: conf.evm_v1_1_history_max_log_range_blocks,
+		avgBlockTimeSeconds: conf.evm_v1_1_avg_block_time_seconds,
+		scanStartTimestamp: conf.scan_start_timestamp,
+	});
 	contractManager.onV1Ready(network, (contracts) => { // v1 only
 		contractManagerOfV1.setContracts(network, contracts);
 	});
+	contractManager.onV1_1Ready(network, (contracts) => {
+		v1_1HistoricalChecker.setContracts(network, contracts);
+	});
 	p.connect(async () => { // new provider (connect/reconnect)
-		contractManagerOfV1.setProvider(network, p.provider);
+		await bridges.refresh();
 		const contracts = bridges.getContractsByNetwork(network);
-		await contractManager.initNetworkContracts(contracts, network, p.provider);
-		contractManager.initHandlersByNetwork(network, p);
+		const initialized = await contractManager.initNetworkContracts(contracts, network, p.provider, {
+			requestReconnect: () => p.close(),
+		});
+		if (!initialized)
+			return;
+
+		contractManagerOfV1.setProvider(network, p.provider);
+		v1_1HistoricalChecker.setProvider(network, p.provider);
+		contractManager.initHandlersByNetwork(network, p, {
+			onError: () => {
+				v1_1HistoricalChecker.runNetwork(network);
+			},
+		});
 		if (enableSubscribeCheck) {
 			p.startSubscribeCheck();
 		}
@@ -56,7 +80,10 @@ async function init() {
 	await bridges.init();
 
 	const contractManager = new ContractManager();
-	const contractManagerOfV1 = new ContractRunnerForV1();
+	const contractManagerOfV1 = new ContractRunnerForV1(30, {
+		scanStartTimestamp: conf.scan_start_timestamp,
+		avgBlockTimeSeconds: conf.evm_v1_1_avg_block_time_seconds,
+	});
 
 	initNetwork('Ethereum', contractManager, contractManagerOfV1, bridges);
 	initNetwork('BSC', contractManager, contractManagerOfV1, bridges);

@@ -13,7 +13,6 @@ const votedValueUintArrayAbi = [
 	'function leader(uint256) view returns (uint256)',
 	'function votesByValue(bytes32) view returns (uint256)',
 	'function votesByValueAddress(bytes32, address) view returns (uint256)',
-	'function init(address _governance, uint256[] initial_value, function _validationCallback, function _commitCallback)',
 	'function equal(uint256[] a1, uint256[] a2) pure returns (bool)',
 	'function getKey(uint256[] a) pure returns (bytes32)',
 	'function vote(uint256[] value)',
@@ -25,4 +24,3 @@ const votedValueUintArrayAbi = [
 module.exports = {
 	votedValueUintArrayAbi,
 }
-

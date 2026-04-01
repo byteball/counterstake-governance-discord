@@ -1,13 +1,36 @@
-const { ethers } = require("ethers");
+const { withRateLimitRetry } = require('../utils/withRateLimitRetry');
+
+function cloneContractArg(value) {
+	if (!Array.isArray(value))
+		return value;
+
+	return Array.from(value, cloneContractArg);
+}
+
+function withOptionalOverrides(args, callOverrides) {
+	const normalizedArgs = args.map(cloneContractArg);
+	if (callOverrides === undefined || callOverrides === null)
+		return normalizedArgs;
+	return [...normalizedArgs, callOverrides];
+}
 
 class DataFetcher {
-	static async fetchVotedData(contract, data) {
-		const leader_value = await contract.leader();
-		const leader_support = await contract.votesByValue(leader_value);
+	static async fetchVotedData(contract, data, callOverrides) {
+		const leader_value = await withRateLimitRetry(
+			'DataFetcher.fetchVotedData.leader',
+			() => contract.leader(...withOptionalOverrides([], callOverrides))
+		);
+		const leader_support = await withRateLimitRetry(
+			'DataFetcher.fetchVotedData.leader_support',
+			() => contract.votesByValue(...withOptionalOverrides([leader_value], callOverrides))
+		);
 		let support = null;
 		let value = null;
 		if (data) {
-			support = await contract.votesByValue(data.value);
+			support = await withRateLimitRetry(
+				'DataFetcher.fetchVotedData.support',
+				() => contract.votesByValue(...withOptionalOverrides([data.value], callOverrides))
+			);
 			value = data.value.toString();
 		}
 		return {
@@ -18,23 +41,38 @@ class DataFetcher {
 		};
 	}
 
-	static async fetchVotedArrayData(contract, data) {
+	static async fetchVotedArrayData(contract, data, callOverrides) {
 		let leader_value = [];
 		for (let i = 0; ; i++) {
 			try {
-				leader_value.push(await contract.leader(i));
+				leader_value.push(await withRateLimitRetry(
+					`DataFetcher.fetchVotedArrayData.leader:${i}`,
+					() => contract.leader(...withOptionalOverrides([i], callOverrides))
+				));
 			} catch (e) {
 				break;
 			}
 		}
-		const encoded = ethers.AbiCoder.defaultAbiCoder().encode(['uint[]'], [leader_value]);
-		const leader_support = await contract.votesByValue(ethers.keccak256(encoded));
+		const leaderKey = await withRateLimitRetry(
+			'DataFetcher.fetchVotedArrayData.leader_key',
+			() => contract.getKey(...withOptionalOverrides([leader_value], callOverrides))
+		);
+		const leader_support = await withRateLimitRetry(
+			'DataFetcher.fetchVotedArrayData.leader_support',
+			() => contract.votesByValue(...withOptionalOverrides([leaderKey], callOverrides))
+		);
 
 		let support = null;
 		let value = null;
 		if (data) {
-			const dataEncoded = ethers.AbiCoder.defaultAbiCoder().encode(['uint[]'], [data.value]);
-			support = await contract.votesByValue(ethers.keccak256(dataEncoded));
+			const dataKey = await withRateLimitRetry(
+				'DataFetcher.fetchVotedArrayData.support_key',
+				() => contract.getKey(...withOptionalOverrides([data.value], callOverrides))
+			);
+			support = await withRateLimitRetry(
+				'DataFetcher.fetchVotedArrayData.support',
+				() => contract.votesByValue(...withOptionalOverrides([dataKey], callOverrides))
+			);
 			value = data.value.map(v => Number(v));
 		}
 
