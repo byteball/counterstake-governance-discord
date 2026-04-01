@@ -5,7 +5,7 @@ const sleep = require('../../utils/sleep')
 const Web3_addresses = require('../../db/Web3_addresses');
 const { getAbiByType } = require('../abi/getAbiByType');
 const { getNormalTransactions } = require('../api/getNormalTransactions');
-const { getInternalTransactions } = require('../api/getInternalTransactions');
+const { getInternalTransactions, selectFirstSuccessfulInternalTransaction } = require('../api/getInternalTransactions');
 const { eventsForV1 } = require('../eventsForV1');
 const GovernanceEventDedupe = require('../../db/GovernanceEventDedupe');
 const { withRateLimitRetry } = require('../utils/withRateLimitRetry');
@@ -163,26 +163,28 @@ class ContractRunnerForV1 {
 
 		if (name.startsWith('deposit')) {
 			const transactions = await getInternalTransactions(meta.network, hash);
-			if (!transactions.length) {
+			const transfer = selectFirstSuccessfulInternalTransaction(transactions);
+			if (!transfer) {
 				console.log(`[ContractRunnerForV1] missing deposit transfers for ${meta.network}:${hash}`);
 				return 'err';
 			}
 
 			event.type = 'deposit';
-			event.amount = transactions[0].value.toString();
+			event.amount = transfer.value.toString();
 
 			return event;
 		}
 
 		if (name.startsWith("withdraw")) {
 			const transactions = await getInternalTransactions(meta.network, hash);
-			if (!transactions.length) {
+			const transfer = selectFirstSuccessfulInternalTransaction(transactions);
+			if (!transfer) {
 				console.log(`[ContractRunnerForV1] missing withdrawal transfers for ${meta.network}:${hash}`);
 				return 'err';
 			}
 
 			event.type = 'withdraw';
-			event.amount = transactions[0].value.toString();
+			event.amount = transfer.value.toString();
 
 			return event;
 		}

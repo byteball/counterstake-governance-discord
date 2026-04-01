@@ -53,12 +53,6 @@ exports.ws_nodes = {
 	Kava: process.env.ws_nodes_Kava,
 }
 
-exports.scan_api_keys = {
-	Ethereum: process.env.eth_scan_api_key,
-	BSC: process.env.bsc_scan_api_key,
-	Polygon: process.env.polygon_scan_api_key,
-};
-
 exports.scan_start_timestamp = parseOptionalUtcTimestamp(process.env.scan_start_date, 'scan_start_date');
 
 exports.evm_v1_1_history_days = Number(process.env.evm_v1_1_history_days || 1);
