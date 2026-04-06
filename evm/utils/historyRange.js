@@ -1,5 +1,9 @@
+const sleep = require('../../utils/sleep');
+
 const OVERSCAN_MULTIPLIER = 1.2;
 const SECONDS_IN_DAY = 24 * 60 * 60;
+const DEFAULT_BLOCK_LOAD_RETRY_ATTEMPTS = 5;
+const DEFAULT_BLOCK_LOAD_RETRY_DELAY_SECONDS = 2;
 
 function getEstimatedLookbackBlocks({ lookbackDays, avgBlockTimeSeconds }) {
 	const normalizedAvgBlockTimeSeconds = Number(avgBlockTimeSeconds);
@@ -11,7 +15,49 @@ function getEstimatedLookbackBlocks({ lookbackDays, avgBlockTimeSeconds }) {
 	return Math.ceil((normalizedLookbackDays * SECONDS_IN_DAY / normalizedAvgBlockTimeSeconds) * OVERSCAN_MULTIPLIER);
 }
 
-async function getRangeByStartTimestamp(provider, { startTimestamp, confirmations = 0, avgBlockTimeSeconds, explicitToBlock = null }) {
+function getPositiveInteger(value, fallback) {
+	const normalized = Number(value);
+	if (!Number.isFinite(normalized) || normalized <= 0)
+		return fallback;
+
+	return Math.floor(normalized);
+}
+
+async function getBlockWithRetry(provider, blockNumber, options = {}) {
+	const attempts = getPositiveInteger(options.blockLoadRetryAttempts, DEFAULT_BLOCK_LOAD_RETRY_ATTEMPTS);
+	const delaySeconds = Number.isFinite(Number(options.blockLoadRetryDelaySeconds)) && Number(options.blockLoadRetryDelaySeconds) >= 0
+		? Number(options.blockLoadRetryDelaySeconds)
+		: DEFAULT_BLOCK_LOAD_RETRY_DELAY_SECONDS;
+	const sleepFn = options.sleepFn || sleep;
+	let lastError = null;
+
+	for (let attempt = 1; attempt <= attempts; attempt++) {
+		try {
+			const block = await provider.getBlock(blockNumber);
+			if (block)
+				return block;
+
+			lastError = new Error(`Empty block response for ${blockNumber}`);
+		} catch (error) {
+			lastError = error;
+		}
+
+		if (attempt < attempts) {
+			console.warn(
+				`[historyRange] failed to load block ${blockNumber}, retry ${attempt}/${attempts - 1} in ${delaySeconds}s`,
+				lastError
+			);
+			await sleepFn(delaySeconds);
+		}
+	}
+
+	const finalError = new Error(`Failed to load block ${blockNumber} for historical range after ${attempts} attempts`);
+	if (lastError)
+		finalError.cause = lastError;
+	throw finalError;
+}
+
+async function getRangeByStartTimestamp(provider, { startTimestamp, confirmations = 0, avgBlockTimeSeconds, explicitToBlock = null, ...retryOptions }) {
 	const normalizedStartTimestamp = Number(startTimestamp);
 	if (!Number.isFinite(normalizedStartTimestamp) || normalizedStartTimestamp < 0)
 		throw new Error(`Invalid startTimestamp: ${startTimestamp}`);
@@ -24,9 +70,7 @@ async function getRangeByStartTimestamp(provider, { startTimestamp, confirmation
 	const toBlock = explicitToBlock === null
 		? latestBlock - normalizedConfirmations
 		: Math.max(Number(explicitToBlock) || 0, 0);
-	const anchorBlock = await provider.getBlock(toBlock);
-	if (!anchorBlock)
-		throw new Error(`Failed to load block ${toBlock} for historical range`);
+	const anchorBlock = await getBlockWithRetry(provider, toBlock, retryOptions);
 
 	const secondsDiff = Math.max(anchorBlock.timestamp - normalizedStartTimestamp, 0);
 	const estimatedLookbackBlocks = getEstimatedLookbackBlocks({
@@ -70,7 +114,10 @@ async function getHistoricalRange(provider, { lookbackDays, confirmations, avgBl
 module.exports = {
 	OVERSCAN_MULTIPLIER,
 	SECONDS_IN_DAY,
+	DEFAULT_BLOCK_LOAD_RETRY_ATTEMPTS,
+	DEFAULT_BLOCK_LOAD_RETRY_DELAY_SECONDS,
 	getEstimatedLookbackBlocks,
+	getBlockWithRetry,
 	getRangeByStartTimestamp,
 	getHistoricalRange,
 };

@@ -266,70 +266,73 @@ class ContractRunnerForV1 {
 		if (!unlock)
 			return;
 
-		for (let network in this.#contracts) {
-			const c = this.#contracts[network];
-			if (!c || !c.length) continue;
+		try {
+			for (let network in this.#contracts) {
+				const c = this.#contracts[network];
+				if (!c || !c.length) continue;
 
-			for (let i = 0; i < c.length; i++) {
-				const contract = c[i];
-				const meta = contract.meta;
-				const cursorState = await Web3_addresses.getLastBlockState(meta.network, contract.address);
-				let lastBlock = cursorState.lastBlock;
-				const bootstrapStartTimestamp = cursorState.exists ? null : this.#getBootstrapStartTimestamp();
-				if (!cursorState.exists) {
-					lastBlock = await this.#getBootstrapStartBlock(network);
-					await Web3_addresses.setLastBlock(meta.network, contract.address, lastBlock);
-				}
-				
-				const transactionEntries = await this.#getCandidateCalls(network, contract, lastBlock);
+				for (let i = 0; i < c.length; i++) {
+					const contract = c[i];
+					const meta = contract.meta;
+					const cursorState = await Web3_addresses.getLastBlockState(meta.network, contract.address);
+					let lastBlock = cursorState.lastBlock;
+					const bootstrapStartTimestamp = cursorState.exists ? null : this.#getBootstrapStartTimestamp();
+					if (!cursorState.exists) {
+						lastBlock = await this.#getBootstrapStartBlock(network);
+						await Web3_addresses.setLastBlock(meta.network, contract.address, lastBlock);
+					}
+					
+					const transactionEntries = await this.#getCandidateCalls(network, contract, lastBlock);
 
-				if (transactionEntries.length) {
-					let processedCount = 0;
-					for (let j = 0; j < transactionEntries.length; j++) {
-						const { transaction, candidate } = transactionEntries[j];
-						const transactionTimestamp = ContractRunnerForV1.#getTransactionTimestamp(transaction);
-						if (bootstrapStartTimestamp !== null) {
-							if (transactionTimestamp === null)
-								throw new Error(`[ContractRunnerForV1] missing block_timestamp for ${meta.network}:${transaction.hash}`);
+					if (transactionEntries.length) {
+						let processedCount = 0;
+						for (let j = 0; j < transactionEntries.length; j++) {
+							const { transaction, candidate } = transactionEntries[j];
+							const transactionTimestamp = ContractRunnerForV1.#getTransactionTimestamp(transaction);
+							if (bootstrapStartTimestamp !== null) {
+								if (transactionTimestamp === null)
+									throw new Error(`[ContractRunnerForV1] missing block_timestamp for ${meta.network}:${transaction.hash}`);
 
-							if (transactionTimestamp < bootstrapStartTimestamp) {
-								processedCount++;
-								continue;
+								if (transactionTimestamp < bootstrapStartTimestamp) {
+									processedCount++;
+									continue;
+								}
 							}
+
+							if (candidate) {
+								const event = await this.#prepareEventFromInput(network, candidate, contract);
+								if (event === 'err')
+									break;
+
+								if (event) {
+									const dedupeRef = GovernanceEventDedupe.createEvmTxRef({
+										network: meta.network,
+										contractAddress: contract.address,
+										txHash: candidate.hash,
+										source: 'evm_v1_tx',
+										eventType: event.type,
+									});
+									await Discord.announceEvent(meta, event, dedupeRef);
+								}
+							}
+
+							processedCount++;
 						}
 
-						if (candidate) {
-							const event = await this.#prepareEventFromInput(network, candidate, contract);
-							if (event === 'err')
-								break;
-
-							if (event) {
-								const dedupeRef = GovernanceEventDedupe.createEvmTxRef({
-									network: meta.network,
-									contractAddress: contract.address,
-									txHash: candidate.hash,
-									source: 'evm_v1_tx',
-									eventType: event.type,
-								});
-								await Discord.announceEvent(meta, event, dedupeRef);
-							}
+						const lastFullyProcessedBlock = getLastFullyProcessedBlock(
+							transactionEntries.map(({ transaction }) => transaction),
+							processedCount
+						);
+						if (lastFullyProcessedBlock !== null) {
+							await Web3_addresses.setLastBlock(meta.network, contract.address, lastFullyProcessedBlock + 1);
 						}
-
-						processedCount++;
 					}
-
-					const lastFullyProcessedBlock = getLastFullyProcessedBlock(
-						transactionEntries.map(({ transaction }) => transaction),
-						processedCount
-					);
-					if (lastFullyProcessedBlock !== null) {
-						await Web3_addresses.setLastBlock(meta.network, contract.address, lastFullyProcessedBlock + 1);
-					}
+					await sleep(2);
 				}
-				await sleep(2);
 			}
+		} finally {
+			unlock();
 		}
-		unlock();
 	}
 }
 
