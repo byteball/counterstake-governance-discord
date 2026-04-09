@@ -4,7 +4,8 @@ const Handlers = require('./Handlers');
 const { getAbiByType } = require('../abi/getAbiByType');
 const { withRateLimitRetry } = require('../utils/withRateLimitRetry');
 
-const SUPPORTED_AA_VERSIONS = new Set(['v1', 'v1.1']);
+const SUPPORTED_AA_VERSIONS = new Set(['v1', 'v1.1', 'v1.2']);
+const V1_1_COMPATIBLE_AA_VERSIONS = new Set(['v1.1', 'v1.2']);
 
 function wait(ms) {
 	return new Promise(resolve => setTimeout(resolve, ms));
@@ -21,13 +22,16 @@ function normalizeAaVersion(version) {
 		return 'v1';
 	if (normalized === 'v1.1' || normalized === '1.1')
 		return 'v1.1';
+	if (normalized === 'v1.2' || normalized === '1.2')
+		return 'v1.2';
 	return normalized;
 }
 
 class ContractManager {
 	#contracts = {
 		v1: {},
-		'v1.1': {}
+		'v1.1': {},
+		'v1.2': {},
 	};
 	#initializingNetworks = {};
 	#readyHandlers = {
@@ -49,6 +53,7 @@ class ContractManager {
 			const nextContracts = {
 				v1: [],
 				'v1.1': [],
+				'v1.2': [],
 			};
 
 			try {
@@ -73,16 +78,18 @@ class ContractManager {
 
 			this.#contracts.v1[network] = nextContracts.v1;
 			this.#contracts['v1.1'][network] = nextContracts['v1.1'];
+			this.#contracts['v1.2'][network] = nextContracts['v1.2'];
 			console.log(
 				`[ContractManager:${network}] ready: v1=${this.#contracts.v1[network]?.length || 0}, ` +
-				`v1.1=${this.#contracts['v1.1'][network]?.length || 0}`
+				`v1.1=${this.#contracts['v1.1'][network]?.length || 0}, ` +
+				`v1.2=${this.#contracts['v1.2'][network]?.length || 0}`
 			);
 
 			if (this.#readyHandlers.v1[network])
 				this.#readyHandlers.v1[network](this.#contracts.v1[network] || []);
 
 			if (this.#readyHandlers['v1.1'][network])
-				this.#readyHandlers['v1.1'][network](this.#contracts['v1.1'][network] || []);
+				this.#readyHandlers['v1.1'][network](this.#getV1_1CompatibleContracts(network));
 
 			return true;
 		})();
@@ -95,10 +102,11 @@ class ContractManager {
 	}
 
 	initHandlersByNetwork(network, provider, options = {}) {
-		if (!this.#contracts['v1.1'][network]?.length)
+		const contracts = this.#getV1_1CompatibleContracts(network);
+		if (!contracts.length)
 			return;
 
-		this.#contracts['v1.1'][network].forEach(contract => {
+		contracts.forEach(contract => {
 			if (this.#handlers[contract.type])
 				this.#handlers[contract.type](contract, provider, options);
 		});
@@ -110,6 +118,11 @@ class ContractManager {
 
 	onV1_1Ready(network, handler) {
 		this.#readyHandlers['v1.1'][network] = handler;
+	}
+
+	#getV1_1CompatibleContracts(network) {
+		return [...V1_1_COMPATIBLE_AA_VERSIONS]
+			.flatMap(version => this.#contracts[version][network] || []);
 	}
 
 	#addContract(target, meta, address, type, name) {

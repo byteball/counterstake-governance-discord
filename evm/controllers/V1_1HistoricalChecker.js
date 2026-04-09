@@ -11,6 +11,7 @@ const { getHistoricalRange, getRangeByStartTimestamp, SECONDS_IN_DAY } = require
 const { withRateLimitRetry } = require("../utils/withRateLimitRetry");
 const HISTORY_SOURCE = 'evm_v1_1_history_log';
 const DEFAULT_BOOTSTRAP_LOOKBACK_DAYS = 7;
+const SUPPORTED_AA_VERSIONS = new Set(['v1.1', 'v1.2']);
 
 const DEFAULT_OPTIONS = {
 	lookbackDays: 1,
@@ -147,7 +148,7 @@ class V1_1HistoricalChecker {
 	}
 
 	setContracts(network, contracts) {
-		this.#contracts[network] = (contracts || []).filter(contract => contract?.meta?.aa_version === 'v1.1');
+		this.#contracts[network] = (contracts || []).filter(contract => SUPPORTED_AA_VERSIONS.has(contract?.meta?.aa_version));
 		this.#ensureNetwork(network, false);
 	}
 
@@ -355,10 +356,14 @@ class V1_1HistoricalChecker {
 
 	async #getOrCreateBootstrapResumeState(network, provider, contracts, avgBlockTimeSeconds) {
 		const storedState = await V1_1BootstrapState.get(network);
-		if (storedState?.bootstrapCompletedAt)
-			return null;
-
 		const contractAddresses = contracts.map(contract => contract.address);
+		if (storedState?.bootstrapCompletedAt) {
+			if (this.#isContractSetCompatible(storedState, contracts))
+				return null;
+
+			return this.#createBootstrapResumeState(network, provider, contractAddresses, avgBlockTimeSeconds, storedState.scanStartTimestamp);
+		}
+
 		if (!storedState) {
 			return this.#createBootstrapResumeState(network, provider, contractAddresses, avgBlockTimeSeconds);
 		}
