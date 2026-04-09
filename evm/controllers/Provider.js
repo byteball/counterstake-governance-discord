@@ -89,7 +89,7 @@ class Provider {
 			this.#pendingConnect = true;
 			return;
 		}
-		this.#createProvider();
+		this.#startCreateProvider();
 	}
 	
 	startSubscribeCheck() {
@@ -138,9 +138,16 @@ class Provider {
 			this.#connecting = false;
 			if (this.#pendingConnect && !this._provider) {
 				this.#pendingConnect = false;
-				this.#createProvider();
+				this.#startCreateProvider();
 			}
 		}
+	}
+
+	#startCreateProvider() {
+		void this.#createProvider().catch((error) => {
+			console.error(`[Provider[${this.#network}].connect] failed to create provider`, error);
+			this.#scheduleReconnect();
+		});
 	}
 
 	#onOpen(provider) {

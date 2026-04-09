@@ -100,9 +100,10 @@ async function announceCommit(contract, who, value, transaction, options = {}) {
 
 async function announceUnvote(contract, provider, who, transaction, options = {}) {
 	const c = new ethers.Contract(contract.address, getAbiByType(contract.type), provider);
+	const callOverrides = options.blockTag !== undefined ? { blockTag: options.blockTag } : undefined;
 	const fetched = contract.type === 'UintArray'
-		? await DataFetcher.fetchVotedArrayData(c, null)
-		: await DataFetcher.fetchVotedData(c, null);
+		? await DataFetcher.fetchVotedArrayData(c, null, callOverrides)
+		: await DataFetcher.fetchVotedData(c, null, callOverrides);
 
 	const event = {
 		...buildEventBase(contract, who, transaction),

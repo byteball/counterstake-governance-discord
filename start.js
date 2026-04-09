@@ -20,6 +20,7 @@ eventBus.once('connected', function(ws){
 });
 
 async function start(){
+	await migration.init()
 	await discoverGovernanceAas();
 	eventBus.on('connected', function(ws){
 		conf.governance_export_base_AAs
@@ -30,7 +31,6 @@ async function start(){
 	});
 	lightWallet.refreshLightClientHistory();
 	setInterval(discoverGovernanceAas, 24*3600*1000); // everyday check
-	await migration.init()
 	await evm.init();
 }
 
