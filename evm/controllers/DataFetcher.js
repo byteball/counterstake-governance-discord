@@ -1,4 +1,7 @@
-const { withRateLimitRetry } = require('../utils/withRateLimitRetry');
+const {
+	isRateLimitRetryExhaustedError,
+	withRateLimitRetry,
+} = require('../utils/withRateLimitRetry');
 
 function cloneContractArg(value) {
 	if (!Array.isArray(value))
@@ -16,7 +19,7 @@ function withOptionalOverrides(args, callOverrides) {
 
 class DataFetcher {
 	static async fetchVotedData(contract, data, callOverrides) {
-		const leader_value = await withRateLimitRetry(
+			const leader_value = await withRateLimitRetry(
 			'DataFetcher.fetchVotedData.leader',
 			() => contract.leader(...withOptionalOverrides([], callOverrides))
 		);
@@ -50,6 +53,9 @@ class DataFetcher {
 					() => contract.leader(...withOptionalOverrides([i], callOverrides))
 				));
 			} catch (e) {
+				if (isRateLimitRetryExhaustedError(e))
+					throw e;
+
 				break;
 			}
 		}
