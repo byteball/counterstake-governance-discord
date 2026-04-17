@@ -6,6 +6,7 @@ const sleep = require('../../utils/sleep');
 
 const CHECK_INTERVAL = 10000;
 const DEFAULT_RECONNECT_DELAY_SECONDS = 2;
+const DEFAULT_MAX_RECONNECT_ATTEMPTS = 10;
 const WS_CONNECT_STAGGER_SECONDS = 2;
 let wsConnectQueue = Promise.resolve();
 
@@ -43,6 +44,8 @@ class Provider {
 	#connectCB;
 	#providerFactory;
 	#reconnectDelaySeconds;
+	#maxReconnectAttempts;
+	#fatalErrorHandler;
 	
 	#lastBlock = 0;
 	#lastBlockFromEvent = 0;
@@ -50,6 +53,7 @@ class Provider {
 	#connecting = false;
 	#pendingConnect = false;
 	#reconnectTimeout = null;
+	#reconnectAttempts = 0;
 	
 	_provider = null;
 	events = new EventEmitter();
@@ -61,6 +65,12 @@ class Provider {
 		this.#reconnectDelaySeconds = Number.isFinite(Number(options.reconnectDelaySeconds)) && Number(options.reconnectDelaySeconds) >= 0
 			? Number(options.reconnectDelaySeconds)
 			: DEFAULT_RECONNECT_DELAY_SECONDS;
+		this.#maxReconnectAttempts = Number(options.maxReconnectAttempts) || DEFAULT_MAX_RECONNECT_ATTEMPTS;
+		this.#fatalErrorHandler = options.fatalErrorHandler || ((error) => {
+			setImmediate(() => {
+				throw error;
+			});
+		});
 		this.events.setMaxListeners(100);
 		if (!this.#url) {
 			throw new Error(`Network ${network} not supported`);
@@ -144,8 +154,16 @@ class Provider {
 	}
 
 	#startCreateProvider() {
+		if (this.#connecting || this._provider)
+			return;
+
+		const attempt = this.#incrementReconnectAttempts();
 		void this.#createProvider().catch((error) => {
-			console.error(`[Provider[${this.#network}].connect] failed to create provider`, error);
+			console.error(`[Provider[${this.#network}].connect] failed to create provider on attempt ${attempt}/${this.#maxReconnectAttempts}`, error);
+			if (attempt >= this.#maxReconnectAttempts) {
+				this.#failPermanently(error, attempt);
+				return;
+			}
 			this.#scheduleReconnect();
 		});
 	}
@@ -158,10 +176,14 @@ class Provider {
 			this.#lastBlockFromEvent = lastBlock;
 		});
 	
-		Promise.resolve(this.#connectCB?.()).catch((error) => {
-			console.error(`[Provider[${this.#network}].connect]:`, error);
-			this.#disconnect(provider, { reconnect: true });
-		});
+		Promise.resolve(this.#connectCB?.())
+			.then(() => {
+				this.#resetReconnectAttempts();
+			})
+			.catch((error) => {
+				console.error(`[Provider[${this.#network}].connect]:`, error);
+				this.#disconnect(provider, { reconnect: true });
+			});
 	}
 
 	async #onError(provider, error) {
@@ -216,8 +238,29 @@ class Provider {
 		clearTimeout(this.#reconnectTimeout);
 		this.#reconnectTimeout = null;
 	}
+
+	#incrementReconnectAttempts() {
+		this.#reconnectAttempts += 1;
+		return this.#reconnectAttempts;
+	}
+
+	#resetReconnectAttempts() {
+		this.#reconnectAttempts = 0;
+	}
+
+	#failPermanently(cause, attempt) {
+		const error = new Error(
+			`[Provider[${this.#network}]] failed to connect after ${attempt} attempts`
+		);
+		error.code = 'EVM_PROVIDER_CONNECT_RETRY_EXHAUSTED';
+		error.network = this.#network;
+		error.attempts = attempt;
+		error.cause = cause;
+		this.#fatalErrorHandler(error);
+	}
 }
 
 
 module.exports = Provider;
 module.exports.validateRpcWebSocketUrl = validateRpcWebSocketUrl;
+module.exports.DEFAULT_MAX_RECONNECT_ATTEMPTS = DEFAULT_MAX_RECONNECT_ATTEMPTS;
