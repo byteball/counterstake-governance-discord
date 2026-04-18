@@ -2,39 +2,45 @@ const { getBridges } = require("../api/getBridges");
 
 class Bridges {
 	#bridgeContractsByNetwork = {};
+	#refreshPromise = null;
 
 	getContractsByNetwork(network) {
-		return this.#bridgeContractsByNetwork[network];
+		return [...(this.#bridgeContractsByNetwork[network] || [])];
 	}
 
 	async init() {
-		console.log('init bridges');
-		const b = await getBridges();
-		if (!b.length) {
-			throw new Error('Failed to initialize bridges!')
-		}
-		console.log('bridges:', b.length);
-		for (let i = 0; i < b.length; i++) {
-			await this.#parseBridge(b[i]);
-			console.log(`bridges: ${i + 1}/${b.length} done`);
+		return this.refresh();
+	}
+
+	async refresh() {
+		if (this.#refreshPromise)
+			return this.#refreshPromise;
+
+		this.#refreshPromise = this.#refresh();
+		try {
+			await this.#refreshPromise;
+		} finally {
+			this.#refreshPromise = null;
 		}
 	}
 
-	#addBridgeContract(network, type, aa, aa_version, symbol, decimals) {
-		if (!this.#bridgeContractsByNetwork[network]) {
-			this.#bridgeContractsByNetwork[network] = [];
-		}
-		
-		console.log('added bridge contract', {
-			network,
-			type,
-			aa,
-			aa_version,
-			symbol,
-			decimals,
-		})
+	async #refresh() {
+		const bridges = await getBridges();
+		if (!bridges.length)
+			throw new Error('Failed to initialize bridges!');
 
-		this.#bridgeContractsByNetwork[network].push({
+		const nextContractsByNetwork = {};
+		for (const bridge of bridges)
+			this.#parseBridge(bridge, nextContractsByNetwork);
+
+		this.#bridgeContractsByNetwork = nextContractsByNetwork;
+	}
+
+	#addBridgeContract(target, network, type, aa, aa_version, symbol, decimals) {
+		if (!target[network])
+			target[network] = [];
+
+		target[network].push({
 			type,
 			aa,
 			aa_version,
@@ -43,9 +49,10 @@ class Bridges {
 		});
 	}
 
-	#parseBridge(bridge) {
+	#parseBridge(bridge, target) {
 		if (bridge.home_network !== 'Obyte') {
-			this.#addBridgeContract(bridge.home_network,
+			this.#addBridgeContract(target,
+				bridge.home_network,
 				'export',
 				bridge.export_aa,
 				bridge.e_v,
@@ -54,7 +61,8 @@ class Bridges {
 		}
 
 		if (bridge.foreign_network !== 'Obyte') {
-			this.#addBridgeContract(bridge.foreign_network,
+			this.#addBridgeContract(target,
+				bridge.foreign_network,
 				'import',
 				bridge.import_aa,
 				bridge.i_v,

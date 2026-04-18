@@ -13,7 +13,6 @@ const votedAddressAbi = [
 	'function leader() view returns (address)',
 	'function votesByValue(address) view returns (uint256)',
 	'function votesByValueAddress(address, address) view returns (uint256)',
-	'function init(address _governance, address initial_value, function _validationCallback, function _commitCallback)',
 	'function vote(address value)',
 	'function voteAndDeposit(address value, uint256 amount) payable',
 	'function unvote()',
@@ -23,4 +22,3 @@ const votedAddressAbi = [
 module.exports = {
 	votedAddressAbi,
 }
-

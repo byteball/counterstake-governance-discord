@@ -1,22 +1,19 @@
-const Discord = require("../controllers/Discord");
+const {
+	announceDeposit,
+	announceWithdrawal,
+} = require("./shared");
+
+// Deposit(address indexed who, uint amount)
+async function deposit(contract, who, amount, transaction, options = {}) {
+	await announceDeposit(contract, who, amount, transaction, options);
+}
 
 // Withdrawal(address indexed who, uint amount)
-async function withdrawal(contract, who, amount, transaction) {
-	const { name: contract_name, address, meta } = contract;
-
-	let event = {
-		aa_address: address,
-		trigger_address: who,
-		trigger_unit: transaction.transactionHash,
-		name: contract_name,
-		type: 'withdraw',
-		amount: amount.toString(),
-	}
-
-	console.log('event v2:', event);
-	Discord.announceEvent(meta, event);
+async function withdrawal(contract, who, amount, transaction, options = {}) {
+	await announceWithdrawal(contract, who, amount, transaction, options);
 }
 
 module.exports = {
+	deposit,
 	withdrawal,
 }

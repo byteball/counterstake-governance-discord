@@ -1,56 +1,27 @@
-const { ethers } = require("ethers");
-
-const { getAbiByType } = require("../abi/getAbiByType");
-const DataFetcher = require("../controllers/DataFetcher");
-const Formatter = require('../controllers/Formatter');
-const Discord = require('../controllers/Discord');
+const {
+	announceVote,
+	announceCommit,
+	announceUnvote,
+} = require("./shared");
 
 // (address indexed who, uint indexed value, uint votes, uint total_votes, uint leader, uint leader_total_votes, uint expiry_ts)
-function vote(contract, who, value, votes, total_votes, leader, leader_total_votes, expiry_ts, transaction) {
-	const { name: contract_name, address, meta } = contract;
-	const event = {
-		aa_address: address,
-		trigger_address: who,
-		trigger_unit: transaction.transactionHash,
-		added_support: votes.toString(),
-		name: contract_name,
-		type: 'added_support',
-		leader_support: leader_total_votes.toString(),
-		leader_value: Formatter.format(contract_name, leader, meta),
-		value: Formatter.format(contract_name, value, meta),
-		support: total_votes.toString(),
-	}
+async function vote(contract, who, value, votes, total_votes, leader, leader_total_votes, expiry_ts, transaction, options = {}) {
+	await announceVote(contract, who, value, votes, total_votes, leader, leader_total_votes, transaction, options);
+}
 
-	console.log('event v2:', event);
-	Discord.announceEvent(meta, event);
+// (address indexed who, uint indexed value)
+async function commit(contract, who, value, transaction, options = {}) {
+	await announceCommit(contract, who, value, transaction, options);
 }
 
 // (address indexed who, uint indexed value, uint votes)
-async function unvote(contract, provider, who, value, votes, transaction) {
-	const { type, name: contract_name, address, meta } = contract;
-
-	const c = new ethers.Contract(address, getAbiByType(type), provider);
-	const {
-		leader_value,
-		leader_support,
-	} = await DataFetcher.fetchVotedData(c);
-
-	const event = {
-		aa_address: address,
-		trigger_address: who,
-		trigger_unit: transaction.transactionHash,
-		name: contract_name,
-		type: 'removed_support',
-		leader_support: leader_support.toString(),
-		leader_value: Formatter.format(contract_name, leader_value, meta),
-	}
-
-	console.log('event v2:', event);
-	Discord.announceEvent(meta, event);
+async function unvote(contract, provider, who, value, votes, transaction, options = {}) {
+	await announceUnvote(contract, provider, who, transaction, options);
 }
 
 
 module.exports = {
 	vote,
+	commit,
 	unvote,
 }

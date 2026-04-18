@@ -5,26 +5,77 @@ const EventEmitter = require('node:events');
 const sleep = require('../../utils/sleep');
 
 const CHECK_INTERVAL = 10000;
+const DEFAULT_RECONNECT_DELAY_SECONDS = 2;
+const DEFAULT_MAX_RECONNECT_ATTEMPTS = 10;
+const WS_CONNECT_STAGGER_SECONDS = 2;
+let wsConnectQueue = Promise.resolve();
+
+async function enqueueWebSocketProviderCreation(createProvider) {
+	const task = async () => {
+		const provider = createProvider();
+		await sleep(WS_CONNECT_STAGGER_SECONDS);
+		return provider;
+	};
+
+	const pendingTask = wsConnectQueue
+		.catch(() => {})
+		.then(task);
+
+	wsConnectQueue = pendingTask.catch(() => {});
+	return pendingTask;
+}
+
+function validateRpcWebSocketUrl(network, rawUrl) {
+	let url;
+	try {
+		url = new URL(rawUrl);
+	} catch (error) {
+		throw new Error(`[Provider[${network}]] invalid websocket URL: ${rawUrl}`);
+	}
+
+	if (url.protocol !== 'ws:' && url.protocol !== 'wss:') {
+		throw new Error(`[Provider[${network}]] unsupported websocket protocol: ${url.protocol}`);
+	}
+}
 
 class Provider {
 	#network;
 	#url;
 	#connectCB;
+	#providerFactory;
+	#reconnectDelaySeconds;
+	#maxReconnectAttempts;
+	#fatalErrorHandler;
 	
 	#lastBlock = 0;
 	#lastBlockFromEvent = 0;
 	#lastBlockInterval;
+	#connecting = false;
+	#pendingConnect = false;
+	#reconnectTimeout = null;
+	#reconnectAttempts = 0;
 	
 	_provider = null;
 	events = new EventEmitter();
 
-	constructor(network) {
+	constructor(network, options = {}) {
 		this.#network = network;
 		this.#url = conf.ws_nodes[network];
+		this.#providerFactory = options.providerFactory || ((url) => new ethers.WebSocketProvider(url));
+		this.#reconnectDelaySeconds = Number.isFinite(Number(options.reconnectDelaySeconds)) && Number(options.reconnectDelaySeconds) >= 0
+			? Number(options.reconnectDelaySeconds)
+			: DEFAULT_RECONNECT_DELAY_SECONDS;
+		this.#maxReconnectAttempts = Number(options.maxReconnectAttempts) || DEFAULT_MAX_RECONNECT_ATTEMPTS;
+		this.#fatalErrorHandler = options.fatalErrorHandler || ((error) => {
+			setImmediate(() => {
+				throw error;
+			});
+		});
 		this.events.setMaxListeners(100);
 		if (!this.#url) {
 			throw new Error(`Network ${network} not supported`);
 		}
+		validateRpcWebSocketUrl(network, this.#url);
 	}
 
 	get network() {
@@ -43,13 +94,22 @@ class Provider {
 		if (cb) {
 			this.#connectCB = cb;
 		}
-		this.#createProvider();
+		this.#clearReconnectTimeout();
+		if (this.#connecting) {
+			this.#pendingConnect = true;
+			return;
+		}
+		this.#startCreateProvider();
 	}
 	
 	startSubscribeCheck() {
+		clearInterval(this.#lastBlockInterval);
 		this.#lastBlockInterval = setInterval(async () => {
 			if (this.#lastBlock === this.#lastBlockFromEvent) {
-				console.error('Subscribe check failed');
+				console.error(
+					`[Provider[${this.#network}].subscribe_check] stalled: ` +
+					`lastBlock=${this.#lastBlock}, lastBlockFromEvent=${this.#lastBlockFromEvent}, intervalMs=${CHECK_INTERVAL}`
+				);
 				this.close();
 				return;
 			}
@@ -59,49 +119,148 @@ class Provider {
 	}
 	
 	close() {
-		if (this._provider.destroyed) return;
-		this._provider.websocket.removeAllListeners();
-		this._provider.destroy();
+		this.#disconnect(this._provider, { reconnect: true });
 	}
 	
 	async #createProvider() {
-		console.log(`[Provider[${this.#network}].ws] create provider`);
-		this._provider = new ethers.WebSocketProvider(this.#url);
-		
-		this._provider.websocket.on('open', () => {
-			this.#onOpen()
-		});
-		this._provider.websocket.on('close', (code) => {
-			this.#onClose(code);
-		});
-		this._provider.websocket.on('error', (error) => {
-			this.#onError(error);
+		if (this.#connecting || this._provider)
+			return;
+
+		this.#connecting = true;
+		try {
+			await enqueueWebSocketProviderCreation(() => {
+				const provider = this.#providerFactory(this.#url);
+				this._provider = provider;
+				
+				provider.websocket.on('open', () => {
+					this.#onOpen(provider);
+				});
+				provider.websocket.on('close', (code) => {
+					this.#onClose(provider, code);
+				});
+				provider.websocket.on('error', (error) => {
+					this.#onError(provider, error);
+				});
+
+				return provider;
+			});
+		} finally {
+			this.#connecting = false;
+			if (this.#pendingConnect && !this._provider) {
+				this.#pendingConnect = false;
+				this.#startCreateProvider();
+			}
+		}
+	}
+
+	#startCreateProvider() {
+		if (this.#connecting || this._provider)
+			return;
+
+		const attempt = this.#incrementReconnectAttempts();
+		void this.#createProvider().catch((error) => {
+			console.error(`[Provider[${this.#network}].connect] failed to create provider on attempt ${attempt}/${this.#maxReconnectAttempts}`, error);
+			if (attempt >= this.#maxReconnectAttempts) {
+				this.#failPermanently(error, attempt);
+				return;
+			}
+			this.#scheduleReconnect();
 		});
 	}
 
-	#onOpen() {
-		this._provider.on('block', (lastBlock) => {
+	#onOpen(provider) {
+		if (provider !== this._provider)
+			return;
+
+		provider.on('block', (lastBlock) => {
 			this.#lastBlockFromEvent = lastBlock;
 		});
 	
-		this.#connectCB();
+		Promise.resolve(this.#connectCB?.())
+			.then(() => {
+				this.#resetReconnectAttempts();
+			})
+			.catch((error) => {
+				console.error(`[Provider[${this.#network}].connect]:`, error);
+				this.#disconnect(provider, { reconnect: true });
+			});
 	}
 
-	#onError(error) {
+	async #onError(provider, error) {
+		if (provider !== this._provider)
+			return;
+
 		console.error(`[Provider[${this.#network}].ws_error]:`, error);
-		this.close();
+		await this.#disconnect(provider, { reconnect: true });
 	}
 
-	async #onClose(code) {
-		console.error(`[Provider[${this.#network}].ws_close]:`, code);
+	async #onClose(provider, code) {
+		if (provider !== this._provider)
+			return;
+
+		console.warn(`[Provider[${this.#network}].ws_close]:`, code);
+		await this.#disconnect(provider, { reconnect: true });
+	}
+
+	async #disconnect(provider, { reconnect }) {
+		if (!provider || provider !== this._provider)
+			return;
+
+		this._provider = null;
 		this.events.emit('close');
 		clearInterval(this.#lastBlockInterval);
+		this.#lastBlockInterval = null;
 		this.#lastBlock = 0;
 		this.#lastBlockFromEvent = 0;
-		await sleep(2);
-		this.connect();
+		try {
+			if (!provider.destroyed)
+				await provider.destroy();
+		} finally {
+			if (reconnect)
+				this.#scheduleReconnect();
+		}
+	}
+
+	#scheduleReconnect() {
+		if (this.#reconnectTimeout)
+			return;
+
+		this.#reconnectTimeout = setTimeout(() => {
+			this.#reconnectTimeout = null;
+			this.connect();
+		}, this.#reconnectDelaySeconds * 1000);
+	}
+
+	#clearReconnectTimeout() {
+		if (!this.#reconnectTimeout)
+			return;
+
+		clearTimeout(this.#reconnectTimeout);
+		this.#reconnectTimeout = null;
+	}
+
+	#incrementReconnectAttempts() {
+		this.#reconnectAttempts += 1;
+		return this.#reconnectAttempts;
+	}
+
+	#resetReconnectAttempts() {
+		this.#reconnectAttempts = 0;
+	}
+
+	#failPermanently(cause, attempt) {
+		const error = new Error(
+			`[Provider[${this.#network}]] failed to connect after ${attempt} attempts`
+		);
+		error.code = 'EVM_PROVIDER_CONNECT_RETRY_EXHAUSTED';
+		error.network = this.#network;
+		error.attempts = attempt;
+		error.cause = cause;
+		this.#fatalErrorHandler(error);
 	}
 }
 
 
 module.exports = Provider;
+module.exports.validateRpcWebSocketUrl = validateRpcWebSocketUrl;
+module.exports.DEFAULT_MAX_RECONNECT_ATTEMPTS = DEFAULT_MAX_RECONNECT_ATTEMPTS;
