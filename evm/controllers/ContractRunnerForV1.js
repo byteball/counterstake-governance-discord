@@ -5,7 +5,6 @@ const sleep = require('../../utils/sleep')
 const Web3_addresses = require('../../db/Web3_addresses');
 const { getAbiByType } = require('../abi/getAbiByType');
 const { getNormalTransactions } = require('../api/getNormalTransactions');
-const { getInternalTransactions } = require('../api/getInternalTransactions');
 const { eventsForV1 } = require('../eventsForV1');
 const DataFetcher = require('./DataFetcher');
 const Formatter = require('./Formatter');
@@ -97,7 +96,7 @@ class ContractRunnerForV1 {
 		}
 
 		if (name.startsWith('deposit')) {
-			const transactions = await getInternalTransactions(meta.network, hash);
+			const transactions = transaction.internal_transactions || [];
 			if (!transactions.length) {
 				console.log('transactions not found(deposit)', meta.network, hash);
 				return 'err';
@@ -110,7 +109,7 @@ class ContractRunnerForV1 {
 		}
 
 		if (name.startsWith("withdraw")) {
-			const transactions = await getInternalTransactions(meta.network, hash);
+			const transactions = transaction.internal_transactions || [];
 			if (!transactions.length) {
 				console.log('transactions not found(withdraw)', meta.network, hash);
 				return 'err';
