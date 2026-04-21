@@ -170,7 +170,7 @@ class ContractRunnerForV1 {
 			for (let i = 0; i < c.length; i++) {
 				const contract = c[i];
 				const meta = contract.meta;
-				const lastBlock = await Web3_addresses.getLastBlockByAddress(contract.address);
+				const lastBlock = await Web3_addresses.getLastBlockByAddress(network, contract.address);
 				
 				console.log('contract v1: ', contract.address);
 				const transactions = await this.#getTransactions(network, contract.address, lastBlock);
@@ -190,7 +190,7 @@ class ContractRunnerForV1 {
 
 					if (lb) {
 						console.log('set new last block', Number(lb) + 1);
-						await Web3_addresses.setLastBlockByAddress(contract.address, Number(lb) + 1);
+						await Web3_addresses.setLastBlockByAddress(network, contract.address, Number(lb) + 1);
 					} else {
 						console.log('number of the last block has not been changed');
 					}
