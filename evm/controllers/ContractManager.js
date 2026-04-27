@@ -57,15 +57,15 @@ class ContractManager {
 	}
 
 	initHandlersByNetwork(network, provider) {
-		if (!this.#contracts['v1.1'][network]) {
-			return;
-		}
+		const contracts = this.#contracts['v1.1'][network] ?? [];
 
-		this.#contracts['v1.1'][network].forEach(contract => {
+		contracts.forEach(contract => {
 			if (this.#handlers[contract.type]) {
 				this.#handlers[contract.type](contract, provider);
 			}
 		});
+
+		return contracts;
 	}
 
 	onV1Ready(network, handler) {

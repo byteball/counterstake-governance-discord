@@ -9,6 +9,7 @@ exports.bNoPassphrase = true;
 
 exports.discord_token = process.env.discord_token;
 exports.discord_channels = [process.env.channel];
+exports.v1_1_replay_from_date = process.env.v1_1_replay_from_date;
 
 exports.hub = process.env.testnet ? 'obyte.org/bb-test' : 'obyte.org/bb';
 exports.explorer_base_url = process.env.testnet ? 'https://testnetexplorer.obyte.org/#' : 'https://explorer.obyte.org/#';
