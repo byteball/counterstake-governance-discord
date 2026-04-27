@@ -10,9 +10,27 @@ const uintArrayHandlers = require('../eventHandlers/uintArray');
 const addressHandlers = require('../eventHandlers/address');
 
 const REPLAY_INTERVAL = 12 * 60 * 60 * 1000;
-function isExpectedReplayError(error) {
-	const message = String(error?.message || error);
-	return /block range (is )?too large/i.test(message) || /exceed(?:ed|s)? maximum block range/i.test(message);
+const MAX_LOG_RANGE_BLOCKS = 5000;
+
+function isBlockRangeTooLargeError(error) {
+	const codes = [
+		error?.code,
+		error?.error?.code,
+	];
+	const message = [
+		error?.error?.message,
+		error?.shortMessage,
+		error?.message,
+		error,
+	]
+		.filter(Boolean)
+		.join(' ');
+
+	return codes.includes(-32062)
+		|| codes.includes(35)
+		|| /block range (is )?too large/i.test(message)
+		|| /exceed(?:ed|s)? maximum block range/i.test(message)
+		|| /ranges? over \d+ blocks? (?:are|is) not supported/i.test(message);
 }
 
 class ContractRunnerForV1_1 {
@@ -54,7 +72,7 @@ class ContractRunnerForV1_1 {
 				await this.#replayContract(network, provider, contracts[i], latestHead);
 			}
 		} catch (e) {
-			if (isExpectedReplayError(e)) {
+			if (isBlockRangeTooLargeError(e)) {
 				console.error(`ContractRunnerForV1_1[${network}] retryable replay error:`, e);
 				return;
 			}
@@ -82,7 +100,7 @@ class ContractRunnerForV1_1 {
 
 		for (let i = 0; i < specs.length; i++) {
 			const spec = specs[i];
-			const logs = await c.queryFilter(spec.eventName, fromBlock, latestHead);
+			const logs = await this.#queryFilterInChunks(c, spec.eventName, fromBlock, latestHead);
 			for (let j = 0; j < logs.length; j++) {
 				entries.push({
 					log: logs[j],
@@ -105,6 +123,34 @@ class ContractRunnerForV1_1 {
 
 		await V1_1.setCursor(network, contract.address, latestHead);
 		await V1_1.deleteEventDedupeUpToBlock(network, contract.address, latestHead);
+	}
+
+	async #queryFilterInChunks(contract, eventName, fromBlock, toBlock) {
+		if (fromBlock > toBlock) {
+			return [];
+		}
+
+		if (toBlock - fromBlock + 1 > MAX_LOG_RANGE_BLOCKS) {
+			const logs = [];
+			for (let chunkFrom = fromBlock; chunkFrom <= toBlock; chunkFrom += MAX_LOG_RANGE_BLOCKS) {
+				const chunkTo = Math.min(chunkFrom + MAX_LOG_RANGE_BLOCKS - 1, toBlock);
+				logs.push(...await this.#queryFilterInChunks(contract, eventName, chunkFrom, chunkTo));
+			}
+			return logs;
+		}
+
+		try {
+			return await contract.queryFilter(eventName, fromBlock, toBlock);
+		} catch (e) {
+			if (!isBlockRangeTooLargeError(e) || fromBlock >= toBlock) {
+				throw e;
+			}
+
+			const middleBlock = Math.floor((fromBlock + toBlock) / 2);
+			const leftLogs = await this.#queryFilterInChunks(contract, eventName, fromBlock, middleBlock);
+			const rightLogs = await this.#queryFilterInChunks(contract, eventName, middleBlock + 1, toBlock);
+			return leftLogs.concat(rightLogs);
+		}
 	}
 
 	#getReplaySpecs(contract, provider) {
