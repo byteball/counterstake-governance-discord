@@ -3,6 +3,8 @@ const { ethers } = require("ethers");
 const Handlers = require('./Handlers');
 const { getAbiByType } = require('../abi/getAbiByType');
 
+const SUPPORTED_AA_VERSIONS = new Set(['v1', 'v1.1', 'v1.2']);
+const V1_1_COMPATIBLE_AA_VERSIONS = ['v1.1', 'v1.2'];
 
 function wait(ms) {
 	return new Promise(resolve => setTimeout(resolve, ms));
@@ -11,7 +13,8 @@ function wait(ms) {
 class ContractManager {
 	#contracts = {
 		v1: {},
-		'v1.1': {}
+		'v1.1': {},
+		'v1.2': {},
 	};
 	#initializedNetworks = {};
 	#readyHandlers = {};
@@ -57,7 +60,7 @@ class ContractManager {
 	}
 
 	initHandlersByNetwork(network, provider) {
-		const contracts = this.#contracts['v1.1'][network] ?? [];
+		const contracts = this.#getV1_1CompatibleContracts(network);
 
 		contracts.forEach(contract => {
 			if (this.#handlers[contract.type]) {
@@ -72,7 +75,16 @@ class ContractManager {
 		this.#readyHandlers[network] = handler;
 	}
 
+	#getV1_1CompatibleContracts(network) {
+		return V1_1_COMPATIBLE_AA_VERSIONS.flatMap(version => this.#contracts[version][network] ?? []);
+	}
+
 	#addContract(meta, address, type, name) {
+		if (!SUPPORTED_AA_VERSIONS.has(meta.aa_version)) {
+			console.warn('unsupported aa_version:', meta.aa_version, address);
+			return;
+		}
+
 		if (!this.#contracts[meta.aa_version][meta.network]) {
 			this.#contracts[meta.aa_version][meta.network] = [];
 		}
@@ -95,6 +107,10 @@ class ContractManager {
 
 	async #setContracts(contract, network, provider) {
 		const { type, aa, aa_version, symbol, decimals } = contract;
+		if (!SUPPORTED_AA_VERSIONS.has(aa_version)) {
+			console.warn('unsupported bridge aa_version:', aa_version, aa);
+			return;
+		}
 
 		const isImport = type === 'import';
 		const meta = { aa_version, network, symbol, decimals, isImport, main_aa: aa };
