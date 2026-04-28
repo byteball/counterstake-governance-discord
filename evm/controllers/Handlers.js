@@ -6,11 +6,19 @@ const uintHandlers = require("../eventHandlers/uint");
 const uintArrayHandlers = require("../eventHandlers/uintArray");
 const addressHandlers = require("../eventHandlers/address");
 
+function runHandler(label, handler) {
+	Promise.resolve()
+		.then(handler)
+		.catch((error) => {
+			console.error(`[Handlers.${label}] failed:`, error);
+		});
+}
+
 class Handlers {
 	static addGovernanceHandler(contract, provider) {
 		let c = new ethers.Contract(contract.address, getAbiByType('governance'), provider.provider);
 		c.on('Withdrawal', (...args) => {
-			governanceHandlers.withdrawal(contract, ...args);
+			runHandler('Withdrawal', () => governanceHandlers.withdrawal(contract, ...args));
 		});
 		
 		provider.events.once('close', () => {
@@ -22,10 +30,10 @@ class Handlers {
 	static addUintHandler(contract, provider) {
 		let c = new ethers.Contract(contract.address, getAbiByType('Uint'), provider.provider);
 		c.on('Vote', (...args) => {
-			uintHandlers.vote(contract, ...args);
+			runHandler('Uint.Vote', () => uintHandlers.vote(contract, ...args));
 		});
 		c.on('Unvote', (...args) => {
-			uintHandlers.unvote(contract, provider.provider, ...args);
+			runHandler('Uint.Unvote', () => uintHandlers.unvote(contract, provider.provider, ...args));
 		});
 		
 		provider.events.once('close', () => {
@@ -37,10 +45,10 @@ class Handlers {
 	static addUintArrayHandler(contract, provider) {
 		let c = new ethers.Contract(contract.address, getAbiByType('UintArray'), provider.provider);
 		c.on('Vote', (...args) => {
-			uintArrayHandlers.vote(contract, ...args);
+			runHandler('UintArray.Vote', () => uintArrayHandlers.vote(contract, ...args));
 		});
 		c.on('Unvote', (...args) => {
-			uintArrayHandlers.unvote(contract, provider.provider, ...args);
+			runHandler('UintArray.Unvote', () => uintArrayHandlers.unvote(contract, provider.provider, ...args));
 		});
 		
 		provider.events.once('close', () => {
@@ -52,10 +60,10 @@ class Handlers {
 	static addAddressHandler(contract, provider) {
 		let c = new ethers.Contract(contract.address, getAbiByType('address'), provider.provider);
 		c.on('Vote', (...args) => {
-			addressHandlers.vote(contract, ...args);
+			runHandler('address.Vote', () => addressHandlers.vote(contract, ...args));
 		});
 		c.on('Unvote', (...args) => {
-			addressHandlers.unvote(contract, provider.provider, ...args);
+			runHandler('address.Unvote', () => addressHandlers.unvote(contract, provider.provider, ...args));
 		});
 		
 		provider.events.once('close', () => {
