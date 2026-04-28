@@ -1,9 +1,9 @@
 const axios = require("axios");
-const sleep = require("../../utils/sleep");
 const {
 	getMoralisChainName,
 	normalizeMoralisAddressTransactionsPage,
 } = require('./moralis');
+const { withBoundedRetry } = require('../utils/boundedRetry');
 
 function getUrl(chain, address, fromBlock, cursor = null) {
 	const chainName = getMoralisChainName(chain);
@@ -21,9 +21,9 @@ function getUrl(chain, address, fromBlock, cursor = null) {
 	return `https://deep-index.moralis.io/api/v2.2/${address}?${params.toString()}`;
 }
 
-async function getAddressTransactionsPage(chain, address, fromBlock, cursor = null, r = 0) {
+async function getAddressTransactionsPage(chain, address, fromBlock, cursor = null) {
 	const url = getUrl(chain, address, fromBlock, cursor);
-	try {
+	return withBoundedRetry(`moralis:${chain}:${address}:${fromBlock}`, async () => {
 		const response = await axios.get(url, {
 			headers: {
 				'X-API-Key': process.env.moralis_api_key,
@@ -33,14 +33,7 @@ async function getAddressTransactionsPage(chain, address, fromBlock, cursor = nu
 			throw Error(`bad response from moralis for ${chain} ${address} ${fromBlock}: ${JSON.stringify(response.data)}`);
 
 		return normalizeMoralisAddressTransactionsPage(response.data);
-	} catch (e) {
-		console.log('getAddressTransactionsPage error', chain, address, fromBlock, cursor, r, e);
-		if (r < 5) {
-			await sleep(1);
-			return getAddressTransactionsPage(chain, address, fromBlock, cursor, ++r);
-		}
-		throw e;
-	}
+	});
 }
 
 function sortTransactionsAsc(transactions) {

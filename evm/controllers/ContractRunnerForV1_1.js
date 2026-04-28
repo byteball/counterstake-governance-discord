@@ -8,6 +8,7 @@ const governanceHandlers = require('../eventHandlers/governance');
 const uintHandlers = require('../eventHandlers/uint');
 const uintArrayHandlers = require('../eventHandlers/uintArray');
 const addressHandlers = require('../eventHandlers/address');
+const { withBoundedRetry } = require('../utils/boundedRetry');
 
 const REPLAY_INTERVAL = 12 * 60 * 60 * 1000;
 const MAX_LOG_RANGE_BLOCKS = 5000;
@@ -67,7 +68,7 @@ class ContractRunnerForV1_1 {
 				return;
 			}
 
-			const latestHead = await provider.getBlockNumber();
+			const latestHead = await withBoundedRetry(`${network}:getBlockNumber`, () => provider.getBlockNumber());
 			for (let i = 0; i < contracts.length; i++) {
 				await this.#replayContract(network, provider, contracts[i], latestHead);
 			}
@@ -140,7 +141,10 @@ class ContractRunnerForV1_1 {
 		}
 
 		try {
-			return await contract.queryFilter(eventName, fromBlock, toBlock);
+			return await withBoundedRetry(
+				`${contract.target || contract.address}:${eventName}:${fromBlock}-${toBlock}`,
+				() => contract.queryFilter(eventName, fromBlock, toBlock)
+			);
 		} catch (e) {
 			if (!isBlockRangeTooLargeError(e) || fromBlock >= toBlock) {
 				throw e;
@@ -212,7 +216,7 @@ class ContractRunnerForV1_1 {
 		}
 
 		const targetTimestamp = Math.floor(Date.parse(`${replayFromDate}T00:00:00Z`) / 1000);
-		const latestBlock = await provider.getBlock(latestHead);
+		const latestBlock = await withBoundedRetry(`${network}:getBlock:${latestHead}`, () => provider.getBlock(latestHead));
 		if (latestBlock.timestamp <= targetTimestamp) {
 			this.#bootstrapBlocks[network] = latestHead;
 			return latestHead;
@@ -223,7 +227,7 @@ class ContractRunnerForV1_1 {
 		let result = latestHead;
 		while (left <= right) {
 			const middle = Math.floor((left + right) / 2);
-			const block = await provider.getBlock(middle);
+			const block = await withBoundedRetry(`${network}:getBlock:${middle}`, () => provider.getBlock(middle));
 			if (block.timestamp >= targetTimestamp) {
 				result = middle;
 				right = middle - 1;
