@@ -29,6 +29,18 @@ async function createV1_1EventDedupeTable() {
 )`);
 }
 
+async function createV1EventDedupeTable() {
+  await db.query(`CREATE TABLE IF NOT EXISTS v1_event_dedupe (
+        network TEXT NOT NULL,
+        address TEXT(50) NOT NULL,
+        tx_hash TEXT NOT NULL,
+        candidate_key TEXT NOT NULL,
+        event_type TEXT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+\tCONSTRAINT v1_event_dedupe_PK PRIMARY KEY (network, address, tx_hash, candidate_key)
+)`);
+}
+
 async function isLegacyWeb3AddressesSchema() {
   const rows = await db.query(`PRAGMA table_info(web3_addresses)`);
   if (!rows.length) {
@@ -47,6 +59,7 @@ async function init() {
   await createWeb3AddressesTable();
   await createV1_1EventCursorsTable();
   await createV1_1EventDedupeTable();
+  await createV1EventDedupeTable();
   console.log('migration done')
 }
 

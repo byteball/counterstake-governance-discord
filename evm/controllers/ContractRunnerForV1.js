@@ -3,12 +3,43 @@ const { ethers } = require("ethers");
 
 const sleep = require('../../utils/sleep')
 const Web3_addresses = require('../../db/Web3_addresses');
+const V1EventDedupe = require('../../db/V1EventDedupe');
 const { getAbiByType } = require('../abi/getAbiByType');
-const { getNormalTransactions } = require('../api/getNormalTransactions');
+const { getAddressTransactions } = require('../api/getAddressTransactions');
+const {
+	extractContractCallCandidatesFromMoralisTransaction,
+	selectFirstSuccessfulInternalTransaction,
+} = require('../api/moralis');
 const { eventsForV1 } = require('../eventsForV1');
 const DataFetcher = require('./DataFetcher');
 const Formatter = require('./Formatter');
 const Discord = require("./Discord");
+
+function getLastFullyProcessedBlock(transactions, processedCount) {
+	if (!processedCount)
+		return null;
+
+	let lastFullyProcessedBlock = null;
+	let index = 0;
+
+	while (index < processedCount) {
+		const blockNumber = Number(transactions[index]?.block_number);
+		if (!Number.isFinite(blockNumber))
+			return lastFullyProcessedBlock;
+
+		let nextIndex = index + 1;
+		while (nextIndex < transactions.length && Number(transactions[nextIndex]?.block_number) === blockNumber)
+			nextIndex++;
+
+		if (nextIndex > processedCount)
+			return lastFullyProcessedBlock;
+
+		lastFullyProcessedBlock = blockNumber;
+		index = nextIndex;
+	}
+
+	return lastFullyProcessedBlock;
+}
 
 class ContractRunnerForV1 {
 	#contracts = {};
@@ -20,16 +51,24 @@ class ContractRunnerForV1 {
 		this.#intervalInMinutes = intervalInMinutes;
 	}
 
-	static #getNameAndDataFromInput(input, type) {
+	static #getNameAndDataFromInput(input, type, { quiet = false } = {}) {
 		const metaForDecode = eventsForV1[type];
 		if (!metaForDecode) {
-			console.log('type not found', type, input);
+			if (!quiet)
+				console.log('type not found', type, input);
+			return { name: null, data: null };
+		}
+
+		if (!input || typeof input !== 'string') {
+			if (!quiet)
+				console.log('input not found', type, input);
 			return { name: null, data: null };
 		}
 
 		const event = metaForDecode.events.find(v => input.startsWith(v.sighash));
 		if (!event) {
-			console.log('event not found', type, input);
+			if (!quiet)
+				console.log('event not found', type, input);
 			return { name: null, data: null };
 		}
 
@@ -49,6 +88,12 @@ class ContractRunnerForV1 {
 		this.#delayedExec();
 	}
 
+	#scheduleExec() {
+		this.#exec().catch((error) => {
+			console.error('[ContractRunnerForV1] scheduled execution failed', error);
+		});
+	}
+
 	async #delayedExec(timeInSeconds = 30) {
 		const unlock = await mutex.lockOrSkip('ContractManagerOfV1.delayedExec');
 		if (!unlock) {
@@ -56,10 +101,12 @@ class ContractRunnerForV1 {
 		}
 
 		await sleep(timeInSeconds);
-		this.#exec();
+		this.#scheduleExec();
 
 		if (!this.#intervalInitialized) {
-			setInterval(this.#exec.bind(this), this.#intervalInMinutes * 60 * 1000);
+			setInterval(() => {
+				this.#scheduleExec();
+			}, this.#intervalInMinutes * 60 * 1000);
 			this.#intervalInitialized = true;
 		}
 
@@ -68,8 +115,7 @@ class ContractRunnerForV1 {
 
 	async #getTransactions(chain, address, lastBlock, r = 0) {
 		try {
-			const transactions = await getNormalTransactions(chain, address, lastBlock);
-			return transactions.filter(v => v.to_address === address.toLowerCase()).reverse();
+			return await getAddressTransactions(chain, address, lastBlock);
 		} catch (e) {
 			console.log('getTransactions error:', e);
 			if (!r || r <= 2) {
@@ -81,11 +127,26 @@ class ContractRunnerForV1 {
 		}
 	}
 
-	async #prepareEventFromInput(network, transaction, contract) {
-		const { input, from_address, hash } = transaction;
+	#getContractCallCandidates(transaction, contract) {
+		return extractContractCallCandidatesFromMoralisTransaction(transaction, contract.address)
+			.map((candidate) => {
+				const { name, data } = ContractRunnerForV1.#getNameAndDataFromInput(candidate.input, contract.type, { quiet: true });
+				if (!name)
+					return null;
+
+				return {
+					...candidate,
+					decoded_name: name,
+					decoded_data: data,
+				};
+			})
+			.filter(Boolean);
+	}
+
+	async #prepareEventFromInput(network, candidate, contract) {
+		const { from_address, hash, decoded_name: name, decoded_data: data } = candidate;
 		const { type, name: contract_name, address, meta } = contract;
 
-		const { name, data } = ContractRunnerForV1.#getNameAndDataFromInput(input, type);
 		if (!name) return;
 
 		let event = {
@@ -96,27 +157,27 @@ class ContractRunnerForV1 {
 		}
 
 		if (name.startsWith('deposit')) {
-			const transactions = transaction.internal_transactions || [];
-			if (!transactions.length) {
+			const transfer = selectFirstSuccessfulInternalTransaction(candidate.parent_transaction?.internal_transactions);
+			if (!transfer) {
 				console.log('transactions not found(deposit)', meta.network, hash);
 				return 'err';
 			}
 
 			event.type = 'deposit';
-			event.amount = transactions[0].value.toString();
+			event.amount = transfer.value.toString();
 
 			return event;
 		}
 
 		if (name.startsWith("withdraw")) {
-			const transactions = transaction.internal_transactions || [];
-			if (!transactions.length) {
+			const transfer = selectFirstSuccessfulInternalTransaction(candidate.parent_transaction?.internal_transactions);
+			if (!transfer) {
 				console.log('transactions not found(withdraw)', meta.network, hash);
 				return 'err';
 			}
 
 			event.type = 'withdraw';
-			event.amount = transactions[0].value.toString();
+			event.amount = transfer.value.toString();
 
 			return event;
 		}
@@ -162,45 +223,77 @@ class ContractRunnerForV1 {
 		if (!unlock) {
 			return;
 		}
-		console.log('exec start', (new Date()).toISOString());
-		for (let network in this.#contracts) {
-			const c = this.#contracts[network];
-			if (!c || !c.length) continue;
 
-			for (let i = 0; i < c.length; i++) {
-				const contract = c[i];
-				const meta = contract.meta;
-				const lastBlock = await Web3_addresses.getLastBlockByAddress(network, contract.address);
-				
-				console.log('contract v1: ', contract.address);
-				const transactions = await this.#getTransactions(network, contract.address, lastBlock);
-				console.log('transactions:', transactions.length);
+		try {
+			console.log('exec start', (new Date()).toISOString());
+			for (let network in this.#contracts) {
+				const c = this.#contracts[network];
+				if (!c || !c.length) continue;
 
-				if (transactions.length) {
-					let lb = 0;
-					for (let j = 0; j < transactions.length; j++) {
-						const transaction = transactions[j];
-						const event = await this.#prepareEventFromInput(network, transaction, contract);
-						console.log('event:', event, transaction.hash);
-						if (!event) continue;
-						if (event === 'err') break;
-						Discord.announceEvent(meta, event);
-						lb = transaction.block_number;
+				for (let i = 0; i < c.length; i++) {
+					const contract = c[i];
+					const meta = contract.meta;
+					const lastBlock = await Web3_addresses.getLastBlockByAddress(network, contract.address);
+
+					console.log('contract v1: ', contract.address);
+					const transactions = await this.#getTransactions(network, contract.address, lastBlock);
+					console.log('transactions:', transactions.length);
+
+					if (transactions.length) {
+						let processedCount = 0;
+						for (let j = 0; j < transactions.length; j++) {
+							const transaction = transactions[j];
+							const candidates = this.#getContractCallCandidates(transaction, contract);
+							let failed = false;
+
+							for (let k = 0; k < candidates.length; k++) {
+								const candidate = candidates[k];
+								const event = await this.#prepareEventFromInput(network, candidate, contract);
+								console.log('event:', event, candidate.hash, candidate.candidate_key);
+								if (!event) continue;
+								if (event === 'err') {
+									failed = true;
+									break;
+								}
+
+								const accepted = await V1EventDedupe.claim(
+									meta.network,
+									contract.address,
+									candidate.hash,
+									candidate.candidate_key,
+									event.type
+								);
+								if (!accepted) {
+									console.log('skip duplicate v1 event', contract.address, candidate.hash, candidate.candidate_key);
+									continue;
+								}
+
+								Discord.announceEvent(meta, event);
+							}
+
+							if (failed) {
+								break;
+							}
+
+							processedCount++;
+						}
+
+						const lastFullyProcessedBlock = getLastFullyProcessedBlock(transactions, processedCount);
+						if (lastFullyProcessedBlock !== null) {
+							console.log('set new last block', Number(lastFullyProcessedBlock) + 1);
+							await Web3_addresses.setLastBlockByAddress(network, contract.address, Number(lastFullyProcessedBlock) + 1);
+						} else {
+							console.log('number of the last block has not been changed');
+						}
 					}
-
-					if (lb) {
-						console.log('set new last block', Number(lb) + 1);
-						await Web3_addresses.setLastBlockByAddress(network, contract.address, Number(lb) + 1);
-					} else {
-						console.log('number of the last block has not been changed');
-					}
+					console.log('contract v1 done');
+					await sleep(2);
 				}
-				console.log('contract v1 done');
-				await sleep(2);
 			}
+			console.log('exec done', (new Date()).toISOString());
+		} finally {
+			unlock();
 		}
-		console.log('exec done', (new Date()).toISOString());
-		unlock();
 	}
 }
 
