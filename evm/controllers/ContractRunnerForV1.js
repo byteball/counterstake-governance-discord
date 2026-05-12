@@ -8,7 +8,7 @@ const { getAbiByType } = require('../abi/getAbiByType');
 const { getAddressTransactions } = require('../api/getAddressTransactions');
 const {
 	extractContractCallCandidatesFromMoralisTransaction,
-	selectFirstSuccessfulInternalTransaction,
+	selectFirstInternalTransaction,
 } = require('../api/moralis');
 const { eventsForV1 } = require('../eventsForV1');
 const DataFetcher = require('./DataFetcher');
@@ -17,37 +17,17 @@ const Discord = require("./Discord");
 
 const EMPTY_RESULT_CURSOR_LAG_BLOCKS = 1000;
 
-function getEmptyResultCursorBlock(lastBlock, latestBlock) {
-	if (lastBlock === undefined || lastBlock === null || latestBlock === undefined || latestBlock === null)
+function getEmptyResultCursorBlock(cursorBlock, headBlock) {
+	if (cursorBlock === undefined || cursorBlock === null || headBlock === undefined || headBlock === null)
 		return null;
-	if (!Number.isFinite(Number(lastBlock)) || !Number.isFinite(Number(latestBlock)))
+	if (!Number.isFinite(Number(cursorBlock)) || !Number.isFinite(Number(headBlock)))
 		return null;
 
-	const safeBlock = Math.max(0, Number(latestBlock) - EMPTY_RESULT_CURSOR_LAG_BLOCKS);
-	if (safeBlock <= Number(lastBlock))
+	const safeBlock = Math.max(0, Number(headBlock) - EMPTY_RESULT_CURSOR_LAG_BLOCKS);
+	if (safeBlock <= Number(cursorBlock))
 		return null;
 
 	return safeBlock;
-}
-
-function getContractPollingKey(contract) {
-	return [
-		(contract?.address || '').toLowerCase(),
-		contract?.type || '',
-		contract?.name || '',
-	].join(':');
-}
-
-function dedupeContractsForV1Polling(contracts = []) {
-	const seen = new Set();
-	return contracts.filter((contract) => {
-		const key = getContractPollingKey(contract);
-		if (seen.has(key))
-			return false;
-
-		seen.add(key);
-		return true;
-	});
 }
 
 function getLastFullyProcessedBlock(transactions, processedCount) {
@@ -119,7 +99,7 @@ class ContractRunnerForV1 {
 	}
 
 	setContracts(network, contracts) {
-		this.#contracts[network] = dedupeContractsForV1Polling(contracts);
+		this.#contracts[network] = contracts;
 		this.#delayedExec();
 	}
 
@@ -163,7 +143,7 @@ class ContractRunnerForV1 {
 	}
 
 	#getContractCallCandidates(transaction, contract) {
-		return extractContractCallCandidatesFromMoralisTransaction(transaction, contract.address)
+		return extractContractCallCandidatesFromMoralisTransaction(transaction, contract.address, contract.type)
 			.map((candidate) => {
 				const { name, data } = ContractRunnerForV1.#getNameAndDataFromInput(candidate.input, contract.type, { quiet: true });
 				if (!name)
@@ -192,7 +172,7 @@ class ContractRunnerForV1 {
 		}
 
 		if (name.startsWith('deposit')) {
-			const transfer = selectFirstSuccessfulInternalTransaction(candidate.parent_transaction?.internal_transactions);
+			const transfer = selectFirstInternalTransaction(candidate.parent_transaction?.internal_transactions);
 			if (!transfer) {
 				console.log('transactions not found(deposit)', meta.network, hash);
 				return 'err';
@@ -205,7 +185,7 @@ class ContractRunnerForV1 {
 		}
 
 		if (name.startsWith("withdraw")) {
-			const transfer = selectFirstSuccessfulInternalTransaction(candidate.parent_transaction?.internal_transactions);
+			const transfer = selectFirstInternalTransaction(candidate.parent_transaction?.internal_transactions);
 			if (!transfer) {
 				console.log('transactions not found(withdraw)', meta.network, hash);
 				return 'err';
@@ -264,28 +244,28 @@ class ContractRunnerForV1 {
 			for (let network in this.#contracts) {
 				const c = this.#contracts[network];
 				if (!c || !c.length) continue;
-				let latestBlockForEmptyResult = null;
+				let headBlockForEmptyResultCursor = null;
 
 				for (let i = 0; i < c.length; i++) {
 					const contract = c[i];
 					const meta = contract.meta;
-					const lastBlock = await Web3_addresses.getLastBlockByAddress(network, contract.address);
+					const cursorBlock = await Web3_addresses.getLastBlockByAddress(network, contract.address);
 
 					console.log('contract v1: ', contract.address);
-					const transactions = await this.#getTransactions(network, contract.address, lastBlock);
+					const transactions = await this.#getTransactions(network, contract.address, cursorBlock);
 					console.log('transactions:', transactions.length);
 
 					if (!transactions.length) {
-						if (latestBlockForEmptyResult === null && this.#providers[network]) {
+						if (headBlockForEmptyResultCursor === null && this.#providers[network]) {
 							try {
-								latestBlockForEmptyResult = await this.#providers[network].getBlockNumber();
+								headBlockForEmptyResultCursor = await this.#providers[network].getBlockNumber();
 							} catch (e) {
 								console.error('failed to get latest block for empty v1 result', network, e);
-								latestBlockForEmptyResult = undefined;
+								headBlockForEmptyResultCursor = undefined;
 							}
 						}
 
-						const emptyResultCursorBlock = getEmptyResultCursorBlock(lastBlock, latestBlockForEmptyResult);
+						const emptyResultCursorBlock = getEmptyResultCursorBlock(cursorBlock, headBlockForEmptyResultCursor);
 						if (emptyResultCursorBlock !== null) {
 							console.log('set last checked block', emptyResultCursorBlock);
 							await Web3_addresses.setLastBlockByAddress(network, contract.address, emptyResultCursorBlock);

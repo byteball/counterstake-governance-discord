@@ -4,6 +4,7 @@ const { ethers } = require("ethers");
 
 const V1_1 = require('../../db/V1_1');
 const { getAbiByType } = require('../abi/getAbiByType');
+const { getDecodedAddressTransactions } = require('../api/getDecodedAddressTransactions');
 const governanceHandlers = require('../eventHandlers/governance');
 const uintHandlers = require('../eventHandlers/uint');
 const uintArrayHandlers = require('../eventHandlers/uintArray');
@@ -14,6 +15,7 @@ const REPLAY_INTERVAL = 12 * 60 * 60 * 1000;
 const MAX_LOG_RANGE_BLOCKS = 5000;
 const KAVA_MAX_LOG_RANGE_BLOCKS = 1000;
 const KAVA_RPC_TIMEOUT_MS = 60 * 1000;
+const MORALIS_REPLAY_LAG_BLOCKS = 1000;
 
 function isBlockRangeTooLargeError(error) {
 	const codes = [
@@ -107,6 +109,11 @@ class ContractRunnerForV1_1 {
 			? await this.#getBootstrapBlock(network, provider, latestHead)
 			: cursor + 1;
 
+		if (network !== 'Kava') {
+			await this.#replayContractWithMoralis(network, provider, contract, fromBlock, latestHead);
+			return;
+		}
+
 		if (fromBlock > latestHead) {
 			return;
 		}
@@ -140,6 +147,66 @@ class ContractRunnerForV1_1 {
 
 		await V1_1.setCursor(network, contract.address, latestHead);
 		await V1_1.deleteEventDedupeUpToBlock(network, contract.address, latestHead);
+	}
+
+	async #replayContractWithMoralis(network, provider, contract, fromBlock, latestHead) {
+		const toBlock = Math.max(0, latestHead - MORALIS_REPLAY_LAG_BLOCKS);
+		if (fromBlock > toBlock) {
+			return;
+		}
+
+		const specs = this.#getReplaySpecs(contract, provider);
+		const specByName = new Map(specs.map(spec => [spec.eventName, spec]));
+		const iface = new ethers.Interface(getAbiByType(contract.type));
+		const transactions = await getDecodedAddressTransactions(network, contract.address, fromBlock, toBlock);
+		const entries = [];
+		const normalizedAddress = contract.address.toLowerCase();
+
+		for (let i = 0; i < transactions.length; i++) {
+			const logs = transactions[i].logs || [];
+			for (let j = 0; j < logs.length; j++) {
+				const log = logs[j];
+				if (log.address?.toLowerCase() !== normalizedAddress)
+					continue;
+
+				let parsed;
+				try {
+					parsed = iface.parseLog({ topics: log.topics, data: log.data || '0x' });
+				} catch {
+					continue;
+				}
+
+				const spec = specByName.get(parsed?.name);
+				if (!spec)
+					continue;
+
+				entries.push({
+					log: {
+						...log,
+						args: parsed.args,
+					},
+					handle: spec.handle,
+				});
+			}
+		}
+
+		entries.sort((a, b) => {
+			if (a.log.blockNumber !== b.log.blockNumber) {
+				return a.log.blockNumber - b.log.blockNumber;
+			}
+			if ((a.log.transactionIndex || 0) !== (b.log.transactionIndex || 0)) {
+				return (a.log.transactionIndex || 0) - (b.log.transactionIndex || 0);
+			}
+			return (a.log.index || 0) - (b.log.index || 0);
+		});
+
+		for (let i = 0; i < entries.length; i++) {
+			const entry = entries[i];
+			await entry.handle(entry.log);
+		}
+
+		await V1_1.setCursor(network, contract.address, toBlock);
+		await V1_1.deleteEventDedupeUpToBlock(network, contract.address, toBlock);
 	}
 
 	async #queryFilterInChunks(network, contract, eventName, fromBlock, toBlock) {
@@ -190,10 +257,6 @@ class ContractRunnerForV1_1 {
 		switch (contract.type) {
 			case 'governance':
 				return [
-					{
-						eventName: 'Deposit',
-						handle: async (log) => governanceHandlers.deposit(contract, ...log.args, log),
-					},
 					{
 						eventName: 'Withdrawal',
 						handle: async (log) => governanceHandlers.withdrawal(contract, ...log.args, log),

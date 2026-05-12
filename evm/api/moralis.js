@@ -58,6 +58,37 @@ function normalizeMoralisAddressTransaction(transaction) {
 	};
 }
 
+function normalizeMoralisLog(log, transaction) {
+	const logIndex = normalizeNumber(log?.log_index);
+	const topics = [
+		log?.topic0,
+		log?.topic1,
+		log?.topic2,
+		log?.topic3,
+	].map(normalizeOptionalString).filter(Boolean);
+
+	return {
+		address: normalizeOptionalString(log?.address),
+		transactionHash: normalizeOptionalString(log?.transaction_hash || transaction?.hash),
+		transactionIndex: normalizeNumber(log?.transaction_index ?? transaction?.transaction_index),
+		blockNumber: normalizeNumber(log?.block_number ?? transaction?.block_number),
+		index: logIndex,
+		logIndex,
+		data: normalizeOptionalString(log?.data),
+		topics,
+		removed: false,
+	};
+}
+
+function normalizeMoralisDecodedAddressTransaction(transaction) {
+	return {
+		...normalizeMoralisAddressTransaction(transaction),
+		logs: Array.isArray(transaction?.logs)
+			? transaction.logs.map(log => normalizeMoralisLog(log, transaction))
+			: [],
+	};
+}
+
 function normalizeMoralisAddressTransactionsPage(responseData) {
 	if (!Array.isArray(responseData?.result)) {
 		return {
@@ -72,7 +103,21 @@ function normalizeMoralisAddressTransactionsPage(responseData) {
 	};
 }
 
-function extractContractCallCandidatesFromMoralisTransaction(transaction, contractAddress) {
+function normalizeMoralisDecodedAddressTransactionsPage(responseData) {
+	if (!Array.isArray(responseData?.result)) {
+		return {
+			cursor: null,
+			result: [],
+		};
+	}
+
+	return {
+		cursor: responseData.cursor || null,
+		result: responseData.result.map(normalizeMoralisDecodedAddressTransaction),
+	};
+}
+
+function extractContractCallCandidatesFromMoralisTransaction(transaction, contractAddress, contractType = null) {
 	const normalizedAddress = contractAddress.toLowerCase();
 	const candidates = [];
 
@@ -89,45 +134,40 @@ function extractContractCallCandidatesFromMoralisTransaction(transaction, contra
 		});
 	}
 
-	for (let i = 0; i < (transaction?.internal_transactions || []).length; i++) {
-		const internalTransaction = transaction.internal_transactions[i];
-		const internalFrom = normalizeOptionalString(internalTransaction?.from);
-		if (internalTransaction?.to?.toLowerCase() !== normalizedAddress)
-			continue;
-		if (!internalFrom)
-			continue;
-		if (internalTransaction.error)
-			continue;
-		if (!internalTransaction.input || internalTransaction.input === '0x')
-			continue;
+	if (contractType !== 'governance') {
+		for (let i = 0; i < (transaction?.internal_transactions || []).length; i++) {
+			const internalTransaction = transaction.internal_transactions[i];
+			const internalFrom = normalizeOptionalString(internalTransaction?.from);
+			if (internalTransaction?.to?.toLowerCase() !== normalizedAddress)
+				continue;
+			if (!internalFrom)
+				continue;
+			if (internalTransaction.error)
+				continue;
+			if (!internalTransaction.input || internalTransaction.input === '0x')
+				continue;
 
-		candidates.push({
-			hash: transaction.hash,
-			from_address: internalFrom,
-			input: internalTransaction.input,
-			candidate_key: `internal:${i + 1}`,
-			parent_transaction: transaction,
-		});
+			candidates.push({
+				hash: transaction.hash,
+				from_address: internalFrom,
+				input: internalTransaction.input,
+				candidate_key: `internal:${i + 1}`,
+				parent_transaction: transaction,
+			});
+		}
 	}
 
 	return candidates;
 }
 
-function hasPositiveValue(value) {
-	try {
-		return BigInt(value) > 0n;
-	} catch {
-		return false;
-	}
-}
-
-function selectFirstSuccessfulInternalTransaction(transactions) {
-	return (transactions || []).find((transaction) => !transaction.error && hasPositiveValue(transaction.value)) || null;
+function selectFirstInternalTransaction(transactions) {
+	return (transactions || [])[0] || null;
 }
 
 module.exports = {
 	getMoralisChainName,
 	normalizeMoralisAddressTransactionsPage,
+	normalizeMoralisDecodedAddressTransactionsPage,
 	extractContractCallCandidatesFromMoralisTransaction,
-	selectFirstSuccessfulInternalTransaction,
+	selectFirstInternalTransaction,
 };

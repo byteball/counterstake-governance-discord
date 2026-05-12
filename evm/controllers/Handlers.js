@@ -17,9 +17,6 @@ function runHandler(label, handler) {
 class Handlers {
 	static addGovernanceHandler(contract, provider) {
 		let c = new ethers.Contract(contract.address, getAbiByType('governance'), provider.provider);
-		c.on('Deposit', (...args) => {
-			runHandler('Deposit', () => governanceHandlers.deposit(contract, ...args));
-		});
 		c.on('Withdrawal', (...args) => {
 			runHandler('Withdrawal', () => governanceHandlers.withdrawal(contract, ...args));
 		});
