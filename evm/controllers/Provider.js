@@ -2,9 +2,9 @@ const conf = require('ocore/conf');
 const { ethers } = require("ethers");
 const EventEmitter = require('node:events');
 
-const sleep = require('../../utils/sleep');
-
 const CHECK_INTERVAL = 10000;
+const RECONNECT_DELAYS_SECONDS = [5, 15, 30, 60, 120, 180, 300, 300, 300, 300];
+const MAX_RECONNECT_ATTEMPTS = RECONNECT_DELAYS_SECONDS.length;
 
 class Provider {
 	#network;
@@ -14,6 +14,8 @@ class Provider {
 	#lastBlock = 0;
 	#lastBlockFromEvent = 0;
 	#lastBlockInterval;
+	#reconnectAttempts = 0;
+	#reconnectTimer = null;
 	
 	_provider = null;
 	events = new EventEmitter();
@@ -43,7 +45,7 @@ class Provider {
 		if (cb) {
 			this.#connectCB = cb;
 		}
-		this.#createProvider();
+		this.#startCreateProvider();
 	}
 	
 	startSubscribeCheck() {
@@ -59,11 +61,24 @@ class Provider {
 	}
 	
 	close() {
-		if (this._provider.destroyed) return;
+		this.#scheduleReconnect('close');
+	}
+
+	#destroyProvider() {
+		if (!this._provider || this._provider.destroyed) return;
 		this._provider.websocket.removeAllListeners();
 		this._provider.destroy();
 	}
-	
+
+	#startCreateProvider() {
+		try {
+			this.#createProvider();
+		} catch (error) {
+			console.error(`[Provider[${this.#network}].create_error]:`, error);
+			this.#scheduleReconnect('create_error');
+		}
+	}
+
 	async #createProvider() {
 		console.log(`[Provider[${this.#network}].ws] create provider`);
 		this._provider = new ethers.WebSocketProvider(this.#url);
@@ -79,27 +94,55 @@ class Provider {
 		});
 	}
 
-	#onOpen() {
+	async #onOpen() {
 		this._provider.on('block', (lastBlock) => {
 			this.#lastBlockFromEvent = lastBlock;
 		});
 	
-		this.#connectCB();
+		try {
+			await this.#connectCB();
+			if (!this.#reconnectTimer) {
+				this.#reconnectAttempts = 0;
+			}
+		} catch (error) {
+			console.error(`[Provider[${this.#network}].connect_callback_error]:`, error);
+			this.#scheduleReconnect('connect_callback_error');
+		}
 	}
 
 	#onError(error) {
 		console.error(`[Provider[${this.#network}].ws_error]:`, error);
-		this.close();
+		this.#scheduleReconnect('ws_error');
 	}
 
-	async #onClose(code) {
+	#onClose(code) {
 		console.error(`[Provider[${this.#network}].ws_close]:`, code);
+		this.#scheduleReconnect(`ws_close:${code}`);
+	}
+
+	#scheduleReconnect(reason) {
+		if (this.#reconnectTimer) return;
+
 		this.events.emit('close');
 		clearInterval(this.#lastBlockInterval);
 		this.#lastBlock = 0;
 		this.#lastBlockFromEvent = 0;
-		await sleep(2);
-		this.connect();
+		this.#destroyProvider();
+
+		this.#reconnectAttempts++;
+		if (this.#reconnectAttempts > MAX_RECONNECT_ATTEMPTS) {
+			const error = new Error(`EVM provider ${this.#network} reconnect attempts exhausted after ${MAX_RECONNECT_ATTEMPTS} attempts`);
+			error.code = 'EVM_PROVIDER_CONNECT_RETRY_EXHAUSTED';
+			setImmediate(() => { throw error; });
+			return;
+		}
+
+		const delaySeconds = RECONNECT_DELAYS_SECONDS[this.#reconnectAttempts - 1];
+		console.error(`[Provider[${this.#network}].reconnect]:`, reason, `${this.#reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS}`, `wait ${delaySeconds}s`);
+		this.#reconnectTimer = setTimeout(() => {
+			this.#reconnectTimer = null;
+			this.connect();
+		}, delaySeconds * 1000);
 	}
 }
 

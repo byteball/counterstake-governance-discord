@@ -4,6 +4,7 @@ const Provider = require('./controllers/Provider');
 const Bridges = require('./controllers/Bridges');
 const ContractManager = require('./controllers/ContractManager');
 const ContractRunnerForV1 = require('./controllers/ContractRunnerForV1');
+const ContractRunnerForV1_1 = require('./controllers/ContractRunnerForV1_1');
 
 const { eventsForV1 } = require('./eventsForV1');
 
@@ -33,16 +34,18 @@ function generateMetaForEventsInV1() {
 	}
 }
 
-function initNetwork(network, contractManager, contractManagerOfV1, bridges, enableSubscribeCheck) {
+function initNetwork(network, contractManager, contractManagerOfV1, contractManagerOfV1_1, bridges, enableSubscribeCheck) {
 	const p = new Provider(network);
 	contractManager.onV1Ready(network, (contracts) => { // v1 only
 		contractManagerOfV1.setContracts(network, contracts);
 	});
 	p.connect(async () => { // new provider (connect/reconnect)
 		contractManagerOfV1.setProvider(network, p.provider);
+		contractManagerOfV1_1.setProvider(network, p.provider);
 		const contracts = bridges.getContractsByNetwork(network);
 		await contractManager.initNetworkContracts(contracts, network, p.provider);
-		contractManager.initHandlersByNetwork(network, p);
+		const v1_1Contracts = contractManager.initHandlersByNetwork(network, p);
+		contractManagerOfV1_1.setContracts(network, v1_1Contracts);
 		if (enableSubscribeCheck) {
 			p.startSubscribeCheck();
 		}
@@ -57,11 +60,12 @@ async function init() {
 
 	const contractManager = new ContractManager();
 	const contractManagerOfV1 = new ContractRunnerForV1();
+	const contractManagerOfV1_1 = new ContractRunnerForV1_1();
 
-	initNetwork('Ethereum', contractManager, contractManagerOfV1, bridges);
-	initNetwork('BSC', contractManager, contractManagerOfV1, bridges);
-	initNetwork('Polygon', contractManager, contractManagerOfV1, bridges);
-	initNetwork('Kava', contractManager, contractManagerOfV1, bridges, true);
+	initNetwork('Ethereum', contractManager, contractManagerOfV1, contractManagerOfV1_1, bridges);
+	initNetwork('BSC', contractManager, contractManagerOfV1, contractManagerOfV1_1, bridges);
+	initNetwork('Polygon', contractManager, contractManagerOfV1, contractManagerOfV1_1, bridges);
+	initNetwork('Kava', contractManager, contractManagerOfV1, contractManagerOfV1_1, bridges, true);
 }
 
 module.exports = {
