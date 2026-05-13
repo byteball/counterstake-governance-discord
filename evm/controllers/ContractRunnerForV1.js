@@ -164,12 +164,16 @@ class ContractRunnerForV1 {
 
 		if (!name) return;
 
-		let event = {
+		const blockTimestamp = candidate.parent_transaction?.block_timestamp;
+		const timestamp = blockTimestamp ? Math.floor(Date.parse(blockTimestamp) / 1000) : undefined;
+		const event = {
 			aa_address: address,
 			trigger_address: from_address,
 			trigger_unit: hash,
 			name: contract_name,
 		}
+		if (Number.isFinite(timestamp))
+			event.timestamp = timestamp;
 
 		if (name.startsWith('deposit')) {
 			const transfer = selectFirstInternalTransaction(candidate.parent_transaction?.internal_transactions);

@@ -142,6 +142,7 @@ class ContractRunnerForV1_1 {
 
 		for (let i = 0; i < entries.length; i++) {
 			const entry = entries[i];
+			await this.#attachBlockTimestamp(network, provider, entry.log);
 			await entry.handle(entry.log);
 		}
 
@@ -251,6 +252,21 @@ class ContractRunnerForV1_1 {
 			? { timeoutMs: KAVA_RPC_TIMEOUT_MS }
 			: undefined;
 		return withBoundedRetry(label, operation, options);
+	}
+
+	async #attachBlockTimestamp(network, provider, log) {
+		if (log.blockTimestamp)
+			return;
+
+		const block = await this.#withNetworkRetry(
+			network,
+			`${network}:getBlock:${log.blockNumber}`,
+			() => provider.getBlock(log.blockNumber)
+		);
+		if (block?.timestamp === undefined || block?.timestamp === null) {
+			throw new Error(`Block timestamp not found for ${network}:${log.blockNumber}`);
+		}
+		log.blockTimestamp = block?.timestamp;
 	}
 
 	#getReplaySpecs(contract, provider) {

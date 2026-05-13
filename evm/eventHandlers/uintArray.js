@@ -4,41 +4,32 @@ const { getAbiByType } = require("../abi/getAbiByType");
 const DataFetcher = require("../controllers/DataFetcher");
 const Formatter = require("../controllers/Formatter");
 const V1_1EventProcessor = require("../controllers/V1_1EventProcessor");
+const { buildEventBase } = require("./shared");
 
 // (address indexed who, uint[] value, uint votes, uint total_votes, uint[] leader, uint leader_total_votes, uint expiry_ts)
 async function vote(contract, who, arrValue, votes, total_votes, arrLeader, leader_total_votes, expiry_ts, transaction) {
-	const { name: contract_name, address, meta } = contract;
-	const log = V1_1EventProcessor.getLog(transaction);
-
-	const event = {
-		aa_address: address,
+	const { name: contract_name, meta } = contract;
+	const event = buildEventBase(contract, transaction, {
 		trigger_address: who,
-		trigger_unit: log?.transactionHash,
 		added_support: votes.toString(),
-		name: contract_name,
 		type: 'added_support',
 		leader_support: leader_total_votes.toString(),
 		leader_value: Formatter.format(contract_name, arrLeader.map(v => Number(v)), meta),
 		value: Formatter.format(contract_name, arrValue.map(v => Number(v)), meta),
 		support: total_votes.toString(),
-	}
+	});
 
 	await V1_1EventProcessor.announce(contract, transaction, event);
 }
 
 // (address indexed who, uint[] value)
 async function commit(contract, who, arrValue, transaction) {
-	const { name: contract_name, address, meta } = contract;
-	const log = V1_1EventProcessor.getLog(transaction);
-
-	const event = {
-		aa_address: address,
+	const { name: contract_name, meta } = contract;
+	const event = buildEventBase(contract, transaction, {
 		trigger_address: who,
-		trigger_unit: log?.transactionHash,
-		name: contract_name,
 		type: 'commit',
 		value: Formatter.format(contract_name, arrValue.map(v => Number(v)), meta),
-	}
+	});
 
 	await V1_1EventProcessor.announce(contract, transaction, event);
 }
@@ -46,7 +37,6 @@ async function commit(contract, who, arrValue, transaction) {
 // (address indexed who, uint[] value, uint votes)
 async function unvote(contract, provider, who, arrValue, votes, transaction) {
 	const { type, name: contract_name, address, meta } = contract;
-	const log = V1_1EventProcessor.getLog(transaction);
 
 	const c = new ethers.Contract(address, getAbiByType(type), provider);
 	const {
@@ -54,15 +44,12 @@ async function unvote(contract, provider, who, arrValue, votes, transaction) {
 		leader_support,
 	} = await DataFetcher.fetchVotedArrayData(c);
 
-	const event = {
-		aa_address: address,
+	const event = buildEventBase(contract, transaction, {
 		trigger_address: who,
-		trigger_unit: log?.transactionHash,
-		name: contract_name,
 		type: 'removed_support',
 		leader_support: leader_support.toString(),
 		leader_value: Formatter.format(contract_name, leader_value, meta),
-	}
+	});
 
 	await V1_1EventProcessor.announce(contract, transaction, event);
 }

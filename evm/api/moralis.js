@@ -72,6 +72,7 @@ function normalizeMoralisLog(log, transaction) {
 		transactionHash: normalizeOptionalString(log?.transaction_hash || transaction?.hash),
 		transactionIndex: normalizeNumber(log?.transaction_index ?? transaction?.transaction_index),
 		blockNumber: normalizeNumber(log?.block_number ?? transaction?.block_number),
+		blockTimestamp: normalizeOptionalString(log?.block_timestamp ?? transaction?.block_timestamp),
 		index: logIndex,
 		logIndex,
 		data: normalizeOptionalString(log?.data),
