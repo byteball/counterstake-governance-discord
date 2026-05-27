@@ -5,9 +5,12 @@ const Web3AddressCursors = require('../../db/Web3AddressCursors');
 const EventPublisher = require('./EventPublisher');
 const { getAddressTransactions } = require('../api/getAddressTransactions');
 const crashOnError = require('../../utils/crashOnError');
+const { watchForDeadlock } = require('../../utils/deadlockMonitor');
 
 const EMPTY_SCAN_LAG_BLOCKS = 1000;
 const SCAN_LOCK = 'AddressEventScanner.scanAllNetworks';
+
+watchForDeadlock(SCAN_LOCK);
 
 function getValidScanStartDate(value) {
 	const date = new Date(value);
