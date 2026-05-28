@@ -47,6 +47,11 @@ function normalizeBlockNumber(value) {
 	return block;
 }
 
+function normalizeTraceId(value) {
+	if (value === undefined || value === null) return null;
+	return String(value);
+}
+
 function normalizeMoralisTransaction(tx) {
 	return {
 		hash: tx.hash,
@@ -56,7 +61,26 @@ function normalizeMoralisTransaction(tx) {
 		to_address: tx.to_address,
 		input: tx.input,
 		value: tx.value,
-		internal_transactions: Array.isArray(tx.internal_transactions) ? tx.internal_transactions : [],
+		internal_transactions: Array.isArray(tx.internal_transactions)
+			? tx.internal_transactions.map((internal, index) => normalizeMoralisInternalTransaction(internal, index))
+			: [],
+	};
+}
+
+function normalizeMoralisInternalTransaction(tx, index) {
+	const hash = tx.transaction_hash || tx.hash;
+	return {
+		transaction_hash: hash,
+		hash,
+		block_number: tx.block_number,
+		value: tx.value,
+		from: tx.from,
+		to: tx.to,
+		input: tx.input || '0x',
+		trace_id: normalizeTraceId(tx.trace_id ?? tx.traceId ?? `moralis-${index}`),
+		type: tx.type,
+		status: tx.status,
+		error: tx.error,
 	};
 }
 
@@ -111,25 +135,50 @@ function getMintscanData(response) {
 }
 
 function normalizeMintscanTransaction(tx) {
+	const hash = tx.tx_hash || tx.txHash || tx.hash || tx.transaction_hash || tx.transactionHash;
+	if (!hash) {
+		throw Error(`missing Mintscan transaction hash: ${JSON.stringify(tx)}`);
+	}
 	return {
-		hash: tx.tx_hash || tx.txHash || tx.hash || tx.transaction_hash || tx.transactionHash,
-		block_number: normalizeBlockNumber(tx.block_height || tx.blockHeight || tx.block_number || tx.blockNumber || tx.height),
-		timestamp: tx.timestamp || tx.block_timestamp || tx.blockTimestamp,
-		from_address: tx.from || tx.from_address || tx.fromAddress,
-		to_address: tx.to || tx.to_address || tx.toAddress,
-		input: tx.input || tx.data || '0x',
+		hash,
+		block_number: normalizeBlockNumber(tx.block_height ?? tx.blockHeight ?? tx.block_number ?? tx.blockNumber ?? tx.height),
+		transaction_index: tx.transactionIndex ?? tx.transaction_index,
+		timestamp: tx.timestamp ?? tx.block_timestamp ?? tx.blockTimestamp,
+		from_address: tx.from ?? tx.from_address ?? tx.fromAddress,
+		to_address: tx.to ?? tx.to_address ?? tx.toAddress,
+		input: tx.input ?? tx.data ?? '0x',
 		value: tx.value,
 		internal_transactions: [],
 	};
 }
 
 function normalizeMintscanInternalTransaction(tx) {
+	const hash = tx.tx_hash || tx.txHash || tx.hash || tx.transaction_hash || tx.transactionHash;
 	return {
-		transaction_hash: tx.tx_hash || tx.txHash || tx.hash || tx.transaction_hash || tx.transactionHash,
+		transaction_hash: hash || null,
+		hash: hash || null,
+		block_number: tx.blockNumber ?? tx.block_number ?? tx.block_height ?? tx.blockHeight ?? tx.height,
+		transaction_index: tx.transactionIndex ?? tx.transaction_index,
 		value: tx.value,
-		from: tx.from || tx.from_address || tx.fromAddress,
-		to: tx.to || tx.to_address || tx.toAddress,
+		from: tx.from ?? tx.from_address ?? tx.fromAddress,
+		to: tx.to ?? tx.to_address ?? tx.toAddress,
+		input: tx.input ?? tx.data ?? '0x',
+		trace_id: normalizeTraceId(tx.traceId ?? tx.trace_id),
+		type: tx.type,
+		status: tx.status,
 	};
+}
+
+function getMintscanBlockIndexKey(blockNumber, transactionIndex) {
+	if (blockNumber === undefined || blockNumber === null || transactionIndex === undefined || transactionIndex === null) {
+		return null;
+	}
+	return `block:${normalizeBlockNumber(blockNumber)}:index:${transactionIndex}`;
+}
+
+function getMintscanInternalGroupKey(row) {
+	if (row.transaction_hash) return `hash:${row.transaction_hash}`;
+	return getMintscanBlockIndexKey(row.block_number, row.transaction_index);
 }
 
 function getMintscanUrl(path, address, fromBlock, page) {
@@ -141,11 +190,6 @@ function getMintscanUrl(path, address, fromBlock, page) {
 		start_block: String(fromBlock || 1),
 	});
 	return `https://apis.mintscan.io/v1/evm/kava/${path}?${params.toString()}`;
-}
-
-function getMintscanInternalTransactionUrl(txhash) {
-	const params = new URLSearchParams({ txhash });
-	return `https://apis.mintscan.io/v1/evm/kava/internal-tx?${params.toString()}`;
 }
 
 async function getMintscanPages(path, address, fromBlock) {
@@ -169,46 +213,61 @@ async function getMintscanPages(path, address, fromBlock) {
 	return rows;
 }
 
-async function getMintscanInternalTransactionsByHash(txhash) {
-	const url = getMintscanInternalTransactionUrl(txhash);
-	const response = await requestWithRetry(
-		() => axios.get(url, { headers: { Authorization: `Bearer ${process.env.mintscan_api_key}` } }),
-		`mintscan internal-tx ${txhash}`
-	);
-	return getMintscanData(response).map(normalizeMintscanInternalTransaction);
-}
+async function getMintscanAddressTransactions(address, fromBlock) {
+	const [txRows, internalRows] = await Promise.all([
+		getMintscanPages('account/tx', address, fromBlock),
+		getMintscanPages('account/internal-tx', address, fromBlock),
+	]);
 
-async function getMintscanAddressTransactions(address, fromBlock, options) {
-	const txRows = await getMintscanPages('account/tx', address, fromBlock);
-	const transactions = txRows.map(normalizeMintscanTransaction);
-	const shouldFetchInternalTransactions = options.shouldFetchInternalTransactions || (() => true);
-	const transactionsNeedingInternalData = transactions.filter(shouldFetchInternalTransactions);
-	if (!transactionsNeedingInternalData.length) {
-		return transactions.sort((a, b) => a.block_number - b.block_number);
+	const transactionsByKey = new Map();
+	for (const transaction of txRows.map(normalizeMintscanTransaction)) {
+		transactionsByKey.set(`hash:${transaction.hash}`, transaction);
+		const blockIndexKey = getMintscanBlockIndexKey(transaction.block_number, transaction.transaction_index);
+		if (blockIndexKey && !transactionsByKey.has(blockIndexKey)) {
+			transactionsByKey.set(blockIndexKey, transaction);
+		}
 	}
 
-	const internalRows = transactionsNeedingInternalData.length === 1
-		? await getMintscanInternalTransactionsByHash(transactionsNeedingInternalData[0].hash)
-		: await getMintscanPages('account/internal-tx', address, fromBlock);
 	const internalByHash = new Map();
 	for (const row of internalRows.map(normalizeMintscanInternalTransaction)) {
-		if (!internalByHash.has(row.transaction_hash)) {
-			internalByHash.set(row.transaction_hash, []);
+		const key = getMintscanInternalGroupKey(row);
+		if (!key) {
+			console.log('skip Mintscan internal transaction without hash or block/index', row);
+			continue;
 		}
-		internalByHash.get(row.transaction_hash).push(row);
+		if (!internalByHash.has(key)) {
+			internalByHash.set(key, []);
+		}
+		internalByHash.get(key).push(row);
 	}
 
-	return transactions
-		.map(tx => ({
-			...tx,
-			internal_transactions: internalByHash.get(tx.hash) || [],
-		}))
-		.sort((a, b) => a.block_number - b.block_number);
+	for (const [key, rows] of internalByHash) {
+		const hash = rows[0].transaction_hash;
+		let transaction = transactionsByKey.get(key);
+		if (!transaction) {
+			const first = rows[0];
+			transaction = {
+				hash,
+				block_number: normalizeBlockNumber(first.block_number),
+				transaction_index: first.transaction_index,
+				timestamp: null,
+				from_address: first.from,
+				to_address: first.to,
+				input: '0x',
+				value: first.value,
+				internal_transactions: [],
+			};
+			transactionsByKey.set(key, transaction);
+		}
+		transaction.internal_transactions = rows;
+	}
+
+	return [...new Set(transactionsByKey.values())].sort((a, b) => a.block_number - b.block_number);
 }
 
 async function getAddressTransactions(chain, address, fromBlock, options = {}) {
 	if (chain === 'Kava') {
-		return getMintscanAddressTransactions(address, fromBlock, options);
+		return getMintscanAddressTransactions(address, fromBlock);
 	}
 	return getMoralisAddressTransactions(chain, address, fromBlock, options);
 }
