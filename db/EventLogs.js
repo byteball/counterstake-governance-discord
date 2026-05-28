@@ -1,11 +1,6 @@
 const db = require('ocore/db');
 
-async function hasEvent(eventId) {
-	const rows = await db.query('SELECT 1 FROM logs WHERE event_id = ? LIMIT 1', [eventId]);
-	return rows.length > 0;
-}
-
-async function hasRelatedEventExcludingId(entry, excludedEventId) {
+async function hasEvent(entry) {
 	const rows = await db.query(
 		`SELECT 1 FROM logs
 		WHERE network = ?
@@ -13,7 +8,6 @@ async function hasRelatedEventExcludingId(entry, excludedEventId) {
 			AND tx_hash = ?
 			AND event_type = ?
 			AND event_name = ?
-			AND event_id <> ?
 		LIMIT 1`,
 		[
 			entry.network,
@@ -21,7 +15,6 @@ async function hasRelatedEventExcludingId(entry, excludedEventId) {
 			entry.tx_hash,
 			entry.event_type,
 			entry.event_name,
-			excludedEventId,
 		]
 	);
 	return rows.length > 0;
@@ -29,10 +22,9 @@ async function hasRelatedEventExcludingId(entry, excludedEventId) {
 
 async function saveEventLog(entry) {
 	await db.query(
-		`INSERT INTO logs(event_id, network, address, tx_hash, aa_version, event_type, event_name, source, payload_json, published_at)
-				VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
+		`INSERT INTO logs(network, address, tx_hash, aa_version, event_type, event_name, source, payload_json, published_at)
+				VALUES(?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))`,
 		[
-			entry.event_id,
 			entry.network,
 			entry.address,
 			entry.tx_hash,
@@ -47,6 +39,5 @@ async function saveEventLog(entry) {
 
 module.exports = {
 	hasEvent,
-	hasRelatedEventExcludingId,
 	saveEventLog,
 };

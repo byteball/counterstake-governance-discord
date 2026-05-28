@@ -3,7 +3,7 @@ const conf = require('ocore/conf');
 const mutex = require('ocore/mutex');
 const Web3AddressCursors = require('../../db/Web3AddressCursors');
 const EventPublisher = require('./EventPublisher');
-const { getAddressTransactions } = require('../api/getAddressTransactions');
+const { getTargetAddressScanCalls } = require('../api/getAddressScanCalls');
 const crashOnError = require('../../utils/crashOnError');
 const { watchForDeadlock } = require('../../utils/deadlockMonitor');
 
@@ -105,62 +105,11 @@ class AddressEventScanner {
 		};
 	}
 
-	static #sameAddress(a, b) {
-		return !!a && !!b && String(a).toLowerCase() === String(b).toLowerCase();
-	}
-
-	static #hasDecodableInput(input) {
-		return !!input && input !== '0x';
-	}
-
-	static #extractCallCandidates(transaction, contract) {
-		const candidates = [];
-		const { address } = contract;
-
-		if (
-			AddressEventScanner.#sameAddress(transaction.to_address, address)
-			&& AddressEventScanner.#hasDecodableInput(transaction.input)
-		) {
-			candidates.push({ ...transaction, candidate_source: 'external' });
-		}
-
-		const internalTransactions = transaction.internal_transactions || [];
-		internalTransactions.forEach((internal) => {
-			if (!AddressEventScanner.#sameAddress(internal.to, address)) return;
-			if (!AddressEventScanner.#hasDecodableInput(internal.input)) return;
-			if (internal.status !== undefined && internal.status !== null && String(internal.status) !== '1') return;
-			if (internal.error) return;
-			if (
-				AddressEventScanner.#sameAddress(internal.from, transaction.from_address)
-				&& AddressEventScanner.#sameAddress(internal.to, transaction.to_address)
-				&& internal.input === transaction.input
-			) return;
-
-			const traceId = internal.trace_id === undefined || internal.trace_id === null ? null : String(internal.trace_id);
-			if (traceId === null || traceId === '') return;
-			const candidate = {
-				...transaction,
-				candidate_key: `${transaction.hash}:internal:${traceId}`,
-				candidate_source: 'internal',
-				block_number: transaction.block_number,
-				timestamp: transaction.timestamp,
-				from_address: internal.from || transaction.from_address,
-				to_address: internal.to,
-				input: internal.input,
-				value: internal.value,
-				internal_transactions: [internal],
-			};
-			candidates.push(candidate);
-		});
-
-		return candidates;
-	}
-
-	async #prepareEventFromInput(network, transaction, contract) {
-		const { input, from_address, hash } = transaction;
+	async #prepareEventFromInput(network, call, contract) {
+		const { input, from_address, hash } = call;
 		const { type, name: contractName, address, meta } = contract;
 		if (!hash) {
-			console.log('transaction hash not found for scanned candidate', meta.network, transaction.block_number, transaction.transaction_index);
+			console.log('transaction hash not found for scanned call', meta.network, call.block_number, call.transaction_index);
 			return 'err';
 		}
 
@@ -173,21 +122,15 @@ class AddressEventScanner {
 			trigger_unit: hash,
 			name: contractName,
 		};
-		const timestamp = normalizeEventTimestamp(transaction.timestamp);
+		const timestamp = normalizeEventTimestamp(call.timestamp);
 		if (timestamp) {
 			event.timestamp = timestamp;
 		}
-		if (transaction.candidate_key) {
-			event.candidate_key = transaction.candidate_key;
-		}
-		if (transaction.candidate_source) {
-			event.candidate_source = transaction.candidate_source;
-		}
 
 		if (name.startsWith('deposit')) {
-			const internal = transaction.internal_transactions[0];
+			const internal = call.internal_transactions[0];
 			if (!internal) {
-				console.log('transactions not found(deposit)', meta.network, hash);
+				console.log('internal transaction not found(deposit)', meta.network, hash);
 				return 'err';
 			}
 			event.type = 'deposit';
@@ -196,9 +139,9 @@ class AddressEventScanner {
 		}
 
 		if (name.startsWith('withdraw')) {
-			const internal = transaction.internal_transactions[0];
+			const internal = call.internal_transactions[0];
 			if (!internal) {
-				console.log('transactions not found(withdraw)', meta.network, hash);
+				console.log('internal transaction not found(withdraw)', meta.network, hash);
 				return 'err';
 			}
 			event.type = 'withdraw';
@@ -252,11 +195,6 @@ class AddressEventScanner {
 		return null;
 	}
 
-	#transactionNeedsInternalData(transaction, type) {
-		const { event } = AddressEventScanner.#findEventFromInput(transaction.input, type);
-		return !!event && (event.name.startsWith('deposit') || event.name.startsWith('withdraw'));
-	}
-
 	async #getLaggedHeadCursor(network, currentCursor) {
 		const provider = this.#providers[network];
 		if (!provider || typeof provider.getBlockNumber !== 'function') {
@@ -273,73 +211,25 @@ class AddressEventScanner {
 		return cursor;
 	}
 
-	async #fillMissingCandidateMetadata(network, candidates) {
-		const provider = this.#providers[network];
-		if (!provider || typeof provider.getBlock !== 'function') return;
-
-		const blockPromises = new Map();
-
-		for (const candidate of candidates) {
-			if (normalizeEventTimestamp(candidate.timestamp) && candidate.hash) continue;
-			const blockNumber = Number(candidate.block_number);
-			if (!Number.isFinite(blockNumber)) continue;
-			if (!blockPromises.has(blockNumber)) {
-				blockPromises.set(blockNumber, provider.getBlock(blockNumber, true).catch(e => {
-					console.log('failed to load block metadata', network, blockNumber, e && e.message ? e.message : e);
-					return null;
-				}));
-			}
-			const block = await blockPromises.get(blockNumber);
-			if (block && block.timestamp) {
-				candidate.timestamp = block.timestamp;
-			}
-			if (!candidate.hash && candidate.transaction_index !== undefined && candidate.transaction_index !== null) {
-				const transactionIndex = Number(candidate.transaction_index);
-				const transaction = block && Number.isInteger(transactionIndex)
-					? (block.prefetchedTransactions && block.prefetchedTransactions[transactionIndex])
-						|| (block.transactions && block.transactions[transactionIndex])
-					: null;
-				const hash = typeof transaction === 'string' ? transaction : transaction && transaction.hash;
-				if (hash) {
-					candidate.hash = hash;
-					const internal = candidate.internal_transactions[0];
-					if (internal) {
-						internal.hash = hash;
-						internal.transaction_hash = hash;
-						candidate.candidate_key = `${hash}:internal:${internal.trace_id}`;
-					}
-				}
-			}
-		}
-	}
-
-	async #getTargetCandidates(network, contract, fromBlock, hasCursor) {
-		const candidates = (await getAddressTransactions(network, contract.address, fromBlock, {
+	async #getTargetCalls(network, contract, fromBlock, hasCursor) {
+		return getTargetAddressScanCalls(network, contract.address, fromBlock, {
 			fromDate: hasCursor ? null : this.#scanStartDate.toISOString(),
-			shouldFetchInternalTransactions: (tx) => this.#transactionNeedsInternalData(tx, contract.type),
-		}))
-			.flatMap(tx => AddressEventScanner.#extractCallCandidates(tx, contract))
-			.sort((a, b) => {
-				const blockDiff = Number(a.block_number) - Number(b.block_number);
-				if (blockDiff) return blockDiff;
-				return String(a.candidate_key || '').localeCompare(String(b.candidate_key || ''));
-			});
-		await this.#fillMissingCandidateMetadata(network, candidates);
-		return candidates;
+			provider: this.#providers[network],
+		});
 	}
 
-	#selectCandidatesToPublish(targetCandidates, hasCursor) {
-		const candidatesToPublish = [];
+	#selectCallsToPublish(targetCalls, hasCursor) {
+		const callsToPublish = [];
 		let cursorBlock = 0;
 		let firstInvalidTimestampBlock = null;
-		for (const candidate of targetCandidates) {
+		for (const call of targetCalls) {
 			if (hasCursor) {
-				candidatesToPublish.push(candidate);
+				callsToPublish.push(call);
 				continue;
 			}
-			const timestamp = normalizeEventTimestamp(candidate.timestamp);
+			const timestamp = normalizeEventTimestamp(call.timestamp);
 			if (!timestamp) {
-				const blockNumber = Number(candidate.block_number);
+				const blockNumber = Number(call.block_number);
 				if (Number.isFinite(blockNumber)) {
 					firstInvalidTimestampBlock = firstInvalidTimestampBlock === null
 						? blockNumber
@@ -348,34 +238,33 @@ class AddressEventScanner {
 				continue;
 			}
 			if (timestamp > Math.floor(this.#scanStartDate.getTime() / 1000)) {
-				candidatesToPublish.push(candidate);
+				callsToPublish.push(call);
 			} else {
-				cursorBlock = Math.max(cursorBlock, Number(candidate.block_number));
+				cursorBlock = Math.max(cursorBlock, Number(call.block_number));
 			}
 		}
-		return { candidatesToPublish, cursorBlock, firstInvalidTimestampBlock };
+		return { callsToPublish, cursorBlock, firstInvalidTimestampBlock };
 	}
 
-	async #publishCandidates(network, contract, candidatesToPublish, cursorBlock) {
+	async #publishCalls(network, contract, callsToPublish, cursorBlock) {
 		let failedBlock = null;
-		for (const candidate of candidatesToPublish) {
-			const event = await this.#prepareEventFromInput(network, candidate, contract);
-			console.log('scanned event:', event, candidate.hash);
+		for (const call of callsToPublish) {
+			const event = await this.#prepareEventFromInput(network, call, contract);
 			if (!event) {
-				cursorBlock = Math.max(cursorBlock, Number(candidate.block_number));
+				cursorBlock = Math.max(cursorBlock, Number(call.block_number));
 				continue;
 			}
 			if (event === 'err') {
-				failedBlock = Number(candidate.block_number);
+				failedBlock = Number(call.block_number);
 				break;
 			}
 			await EventPublisher.publish(contract.meta, event, 'scan');
-			cursorBlock = Math.max(cursorBlock, Number(candidate.block_number));
+			cursorBlock = Math.max(cursorBlock, Number(call.block_number));
 		}
 		return { cursorBlock, failedBlock };
 	}
 
-	async #saveScanCursor(network, contract, currentCursor, cursorBlock, candidatesToPublish, firstUnsafeBlock) {
+	async #saveScanCursor(network, contract, currentCursor, cursorBlock, callsToPublish, firstUnsafeBlock) {
 		if (firstUnsafeBlock !== null) {
 			const safeCursorBlock = Math.min(cursorBlock, firstUnsafeBlock - 1);
 			if (safeCursorBlock > 0) {
@@ -384,7 +273,7 @@ class AddressEventScanner {
 			return;
 		}
 
-		if (!cursorBlock && !candidatesToPublish.length) {
+		if (!cursorBlock && !callsToPublish.length) {
 			const laggedHeadCursor = await this.#getLaggedHeadCursor(network, currentCursor);
 			if (laggedHeadCursor) {
 				await Web3AddressCursors.setLastBlock(network, contract.address, laggedHeadCursor);
@@ -401,16 +290,16 @@ class AddressEventScanner {
 		const currentCursor = await Web3AddressCursors.getLastBlock(network, contract.address);
 		const hasCursor = currentCursor !== null && currentCursor !== undefined;
 		const fromBlock = hasCursor ? currentCursor : 0;
-		const targetCandidates = await this.#getTargetCandidates(network, contract, fromBlock, hasCursor);
+		const targetCalls = await this.#getTargetCalls(network, contract, fromBlock, hasCursor);
 		const {
-			candidatesToPublish,
+			callsToPublish,
 			cursorBlock: bootstrapCursorBlock,
 			firstInvalidTimestampBlock,
-		} = this.#selectCandidatesToPublish(targetCandidates, hasCursor);
-		const { cursorBlock, failedBlock } = await this.#publishCandidates(network, contract, candidatesToPublish, bootstrapCursorBlock);
+		} = this.#selectCallsToPublish(targetCalls, hasCursor);
+		const { cursorBlock, failedBlock } = await this.#publishCalls(network, contract, callsToPublish, bootstrapCursorBlock);
 		const unsafeBlocks = [firstInvalidTimestampBlock, failedBlock].filter(v => v !== null && Number.isFinite(v));
 		const firstUnsafeBlock = unsafeBlocks.length ? Math.min(...unsafeBlocks) : null;
-		await this.#saveScanCursor(network, contract, currentCursor, cursorBlock, candidatesToPublish, firstUnsafeBlock);
+		await this.#saveScanCursor(network, contract, currentCursor, cursorBlock, callsToPublish, firstUnsafeBlock);
 	}
 
 	async scanAllNetworks() {
