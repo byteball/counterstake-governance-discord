@@ -36,6 +36,7 @@ function normalizeMoralisTransaction(tx) {
 		from_address: tx.from_address,
 		to_address: tx.to_address,
 		input: tx.input,
+		status: tx.receipt_status ?? tx.status,
 	};
 }
 
@@ -99,6 +100,8 @@ function getMintscanExternalCall(row) {
 		from_address: row.from,
 		to_address: row.to,
 		input: row.input || '0x',
+		status: row.status,
+		error: row.error,
 		internal_transactions: [],
 	};
 }
