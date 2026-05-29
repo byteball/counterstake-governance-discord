@@ -4,16 +4,10 @@ const EventEmitter = require('node:events');
 
 const sleep = require('../../utils/sleep');
 
-const CHECK_INTERVAL = 10000;
-
 class Provider {
 	#network;
 	#url;
 	#connectCB;
-	
-	#lastBlock = 0;
-	#lastBlockFromEvent = 0;
-	#lastBlockInterval;
 	
 	_provider = null;
 	events = new EventEmitter();
@@ -46,18 +40,6 @@ class Provider {
 		this.#createProvider();
 	}
 	
-	startSubscribeCheck() {
-		this.#lastBlockInterval = setInterval(async () => {
-			if (this.#lastBlock === this.#lastBlockFromEvent) {
-				console.error('Subscribe check failed');
-				this.close();
-				return;
-			}
-			
-			this.#lastBlock = this.#lastBlockFromEvent;
-		}, CHECK_INTERVAL);
-	}
-	
 	close() {
 		if (!this._provider || this._provider.destroyed) return;
 		this._provider.websocket.removeAllListeners();
@@ -80,10 +62,6 @@ class Provider {
 	}
 
 	#onOpen() {
-		this._provider.on('block', (lastBlock) => {
-			this.#lastBlockFromEvent = lastBlock;
-		});
-	
 		this.#connectCB();
 	}
 
@@ -95,9 +73,6 @@ class Provider {
 	async #onClose(code) {
 		console.error(`[Provider[${this.#network}].ws_close]:`, code);
 		this.events.emit('close');
-		clearInterval(this.#lastBlockInterval);
-		this.#lastBlock = 0;
-		this.#lastBlockFromEvent = 0;
 		await sleep(2);
 		this.connect();
 	}
