@@ -45,7 +45,6 @@ eventBus.on('aa_response', async function(objResponse){
 	if (assocGovernanceAAs[objResponse.aa_address]){
 		const governance_aa = assocGovernanceAAs[objResponse.aa_address];
 		const main_aa = assocCounterstakeAAs[governance_aa.main_aa];
-		if (!main_aa) return console.log('main_aa not found for', governance_aa.main_aa);
 
 		const event = await governanceEvents.treatResponseFromGovernanceAA(objResponse, main_aa.asset);
 		if (!isAfterScanStartDate(event.timestamp, conf.scan_start_date))
