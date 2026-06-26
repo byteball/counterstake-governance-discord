@@ -6,8 +6,8 @@ const sleep = require('../../utils/sleep');
 
 const DEFAULT_MAX_RETRIES = 5;
 const DEFAULT_RETRY_DELAY_MS = 2000;
-const LOG_SCAN_BLOCK_RANGE = 5000;
-const SUPPORTED_AA_VERSIONS = ['v1.1', 'v1.2'];
+const LOG_SCAN_BLOCK_RANGE = 10000;
+const SUPPORTED_AA_VERSIONS = ['v1.1', 'v1.2', 'v1.3'];
 const EVENT_NAMES_BY_TYPE = {
 	governance: ['Deposit', 'Withdrawal'],
 	Uint: ['Vote', 'Unvote'],

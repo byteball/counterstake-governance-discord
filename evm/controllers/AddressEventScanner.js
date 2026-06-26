@@ -11,6 +11,10 @@ const {
 	getSqdTargetCallsByContract,
 	isSqdScanSupported,
 } = require('../api/sqdScanCalls');
+const {
+	getSqdLogScanEventsByContract,
+	isSqdLogScanSupported,
+} = require('../api/sqdLogScanEvents');
 const crashOnError = require('../../utils/crashOnError');
 const { ethers } = require('ethers');
 const { getAbiByType } = require('../abi/getAbiByType');
@@ -409,7 +413,7 @@ class AddressEventScanner {
 		}
 	}
 
-	async #scanEventLogContracts(network, contracts) {
+	async #scanEventSourceContracts(network, contracts, sourceName, getEvents) {
 		const eventLogTimestampBlockCache = new Map();
 		const groups = new Map();
 
@@ -433,8 +437,8 @@ class AddressEventScanner {
 			for (;;) {
 				const toBlock = await this.#getLaggedHeadCursor(network, fromBlock);
 				if (!toBlock) break;
-				console.log('address event scan logs chunk start', network, chunkIndex, `${fromBlock}-${toBlock}`, group.contracts.length, 'contracts');
-				const { eventsByAddress, cursorBlock } = await getEventLogScanEventsByContract(group.contracts, this.#providers[network], fromBlock, {
+				console.log(`address event scan ${sourceName} chunk start`, network, chunkIndex, `${fromBlock}-${toBlock}`, group.contracts.length, 'contracts');
+				const { eventsByAddress, cursorBlock } = await getEvents(group.contracts, fromBlock, {
 					fromDate: hasCursor ? null : this.#scanStartDate.toISOString(),
 					toBlock,
 					eventLogTimestampBlockCache,
@@ -448,7 +452,7 @@ class AddressEventScanner {
 					await this.#saveScanCursor(network, contract, currentCursor, cursorBlock, events, null);
 					group.currentCursors.set(contractAddress, cursorBlock ? cursorBlock + 1 : currentCursor);
 				}
-				console.log('address event scan logs chunk done', network, `${fromBlock}-${cursorBlock}`, group.contracts.length, 'contracts', totalEvents, 'events');
+				console.log(`address event scan ${sourceName} chunk done`, network, `${fromBlock}-${cursorBlock}`, group.contracts.length, 'contracts', totalEvents, 'events');
 				const nextBlock = Number(cursorBlock) + 1;
 				if (!Number.isFinite(nextBlock) || nextBlock <= fromBlock) break;
 				fromBlock = nextBlock;
@@ -458,8 +462,27 @@ class AddressEventScanner {
 		}
 	}
 
+	async #scanEventLogContracts(network, contracts) {
+		await this.#scanEventSourceContracts(network, contracts, 'logs', (groupContracts, fromBlock, options) => (
+			getEventLogScanEventsByContract(groupContracts, this.#providers[network], fromBlock, {
+				...options,
+				network,
+			})
+		));
+	}
+
+	async #scanSqdLogContracts(network, contracts) {
+		await this.#scanEventSourceContracts(network, contracts, 'sqd logs', (groupContracts, fromBlock, options) => (
+			getSqdLogScanEventsByContract(network, groupContracts, this.#providers[network], fromBlock, options)
+		));
+	}
+
 	async #scanContracts(network, contracts) {
-		const eventLogContracts = contracts.filter(contract => isEventLogScanSupported(contract));
+		const sqdLogContracts = contracts.filter(contract => isSqdLogScanSupported(network, contract));
+		if (sqdLogContracts.length) {
+			await this.#scanSqdLogContracts(network, sqdLogContracts);
+		}
+		const eventLogContracts = contracts.filter(contract => isEventLogScanSupported(contract) && !isSqdLogScanSupported(network, contract));
 		if (eventLogContracts.length) {
 			await this.#scanEventLogContracts(network, eventLogContracts);
 		}
@@ -467,7 +490,7 @@ class AddressEventScanner {
 		if (sqdContracts.length) {
 			await this.#scanSqdV1Contracts(network, sqdContracts);
 		}
-		const unsupportedContracts = contracts.filter(contract => !isEventLogScanSupported(contract) && !isSqdScanSupported(network, contract));
+		const unsupportedContracts = contracts.filter(contract => !isSqdLogScanSupported(network, contract) && !isEventLogScanSupported(contract) && !isSqdScanSupported(network, contract));
 		if (unsupportedContracts.length) {
 			const details = unsupportedContracts
 				.map(contract => `${contract.meta?.network || network}:${contract.meta?.aa_version}:${contract.type}:${contract.address}`)

@@ -87,7 +87,7 @@ async function getBlockTimestamp(provider, blockNumber) {
 
 async function getBlockForTimestamp(provider, timestamp) {
 	if (!provider || typeof provider.getBlockNumber !== 'function' || typeof provider.getBlock !== 'function') {
-		return 0;
+		throw Error('SQD trace scan needs provider.getBlockNumber/getBlock to resolve scan_start_date');
 	}
 	const head = await requestWithRetry(
 		() => provider.getBlockNumber(),
