@@ -3,12 +3,17 @@ const { ethers } = require("ethers");
 const EventEmitter = require('node:events');
 
 const sleep = require('../../utils/sleep');
+const crashOnError = require('../../utils/crashOnError');
 
 const HEARTBEAT_INTERVAL = 30 * 1000;
 const PONG_TIMEOUT = 10 * 1000;
 const WS_OPEN = 1;
+const MAX_CONNECT_ERROR_ATTEMPTS = 5;
+const INITIAL_CONNECT_RETRY_DELAY = 5;
 
 class Provider {
+	static #openedUrls = new Set();
+
 	#network;
 	#url;
 	#connectCB;
@@ -16,6 +21,8 @@ class Provider {
 	#pongTimeout = null;
 	#reconnecting = false;
 	#reconnectSourceProvider = null;
+	#openedProviders = new WeakSet();
+	#connectErrorAttempts = 0;
 	
 	_provider = null;
 	events = new EventEmitter();
@@ -80,6 +87,9 @@ class Provider {
 
 	#onOpen(provider) {
 		if (!this.#isCurrentProvider(provider)) return;
+		this.#openedProviders.add(provider);
+		Provider.#openedUrls.add(this.#url);
+		this.#connectErrorAttempts = 0;
 		this.#reconnecting = false;
 		this.#reconnectSourceProvider = null;
 		this.#startHeartbeat();
@@ -89,6 +99,16 @@ class Provider {
 	#onError(provider, error) {
 		if (!this.#isCurrentProvider(provider)) return;
 		console.error(`[Provider[${this.#network}].ws_error]:`, error);
+		if (!this.#openedProviders.has(provider)) {
+			if (!Provider.#openedUrls.has(this.#url)) {
+				return crashOnError(`[Provider[${this.#network}].ws_error_before_first_open]`, error);
+			}
+			if (++this.#connectErrorAttempts >= MAX_CONNECT_ERROR_ATTEMPTS) {
+				return crashOnError(`[Provider[${this.#network}].ws_error_before_open]`, error);
+			}
+			const delay = INITIAL_CONNECT_RETRY_DELAY * (2 ** (this.#connectErrorAttempts - 1));
+			return this.#reconnect(provider, `pre-open error ${this.#connectErrorAttempts}/${MAX_CONNECT_ERROR_ATTEMPTS}`, delay);
+		}
 		this.#reconnect(provider, 'error');
 	}
 
@@ -97,7 +117,7 @@ class Provider {
 		this.#reconnect(provider, `close ${code}`);
 	}
 
-	async #reconnect(provider, reason) {
+	async #reconnect(provider, reason, delay = 2) {
 		if (!this.#isCurrentProvider(provider)) return;
 		if (this.#reconnecting && provider === this.#reconnectSourceProvider) return;
 		this.#reconnecting = true;
@@ -108,7 +128,7 @@ class Provider {
 		if (!provider.destroyed) {
 			provider.destroy();
 		}
-		await sleep(2);
+		await sleep(delay);
 		if (this.#isCurrentProvider(provider)) {
 			this.connect();
 		}
