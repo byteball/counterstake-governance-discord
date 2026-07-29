@@ -1,8 +1,8 @@
 const governanceDiscord = require("governance_events/governance_discord");
 const { ethers } = require('ethers');
+const conf = require('../../conf');
 
 const {
-	getLinkToExplorerByAddress,
 	getLinkToExplorerByTX
 } = require("../../utils/getLinkToExplorer");
 
@@ -25,7 +25,7 @@ class Discord {
 			aa_name,
 			meta.symbol,
 			meta.decimals,
-			getLinkToExplorerByAddress(meta.network, meta.main_aa),
+			conf.counterstake_base_url + meta.main_aa,
 			event,
 			getLinkToExplorerByTX(meta.network, event.trigger_unit)
 		);
