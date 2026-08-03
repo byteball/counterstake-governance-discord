@@ -62,6 +62,47 @@ async function requestWithRetry(fn, logContext) {
 	}
 }
 
+async function getSqdLogBlocks(dataset, body, logContext) {
+	const requestOptions = {
+		headers: { 'Content-Type': 'application/json' },
+		responseType: 'text',
+		timeout: DEFAULT_REQUEST_TIMEOUT_MS,
+	};
+	const blocks = [];
+	let cursorBlock = body.fromBlock - 1;
+	while (cursorBlock < body.toBlock) {
+		const nextBody = { ...body, fromBlock: cursorBlock + 1 };
+		const response = await requestWithRetry(async () => {
+			try {
+				return await axios.post(`${SQD_PORTAL_BASE_URL}/${dataset}/stream`, nextBody, requestOptions);
+			} catch (e) {
+				if (e.response?.status !== 503) throw e;
+				const workerResponse = await axios.get(
+					`${SQD_PORTAL_BASE_URL}/${dataset}/${nextBody.fromBlock}/worker`,
+					{ timeout: DEFAULT_REQUEST_TIMEOUT_MS }
+				);
+				const workerUrl = String(workerResponse.data || '').trim();
+				if (!workerUrl.startsWith(`${SQD_PORTAL_BASE_URL}/`)) {
+					throw Error(`bad SQD worker URL ${workerUrl}`);
+				}
+				return axios.post(workerUrl, nextBody, requestOptions);
+			}
+		}, `${logContext} ${nextBody.fromBlock}-${body.toBlock}`);
+		const batch = parseSqdBlocks(response.data);
+		if (!batch.length) {
+			if (response.status === 200) cursorBlock = body.toBlock;
+			break;
+		}
+		const lastBlockNumber = Number(batch[batch.length - 1]?.header?.number);
+		if (!Number.isFinite(lastBlockNumber) || lastBlockNumber < nextBody.fromBlock) {
+			throw Error(`SQD log stream did not advance for ${dataset}`);
+		}
+		blocks.push(...batch);
+		cursorBlock = lastBlockNumber;
+	}
+	return { blocks, cursorBlock };
+}
+
 async function getBlockTimestamp(provider, blockNumber) {
 	return requestWithRetry(async () => {
 		const block = await provider.getBlock(blockNumber);
@@ -104,7 +145,10 @@ async function getStartBlock(network, fromBlock, options) {
 
 function parseSqdBlocks(data) {
 	const text = typeof data === 'string' ? data : String(data || '');
-	return text.split('\n')
+	const trimmed = text.trim();
+	if (!trimmed) return [];
+	if (trimmed.startsWith('[')) return JSON.parse(trimmed);
+	return trimmed.split('\n')
 		.map(line => line.trim())
 		.filter(Boolean)
 		.map(line => JSON.parse(line));
@@ -247,15 +291,11 @@ async function getSqdLogScanEventsByContract(network, contracts, provider, fromB
 		: startBlock + SQD_LOG_SCAN_BLOCK_RANGE - 1;
 
 	const body = getSqdLogsRequestBody(contracts, startBlock, toBlock);
-	const response = await requestWithRetry(
-		() => axios.post(`${SQD_PORTAL_BASE_URL}/${dataset}/stream`, body, {
-			headers: { 'Content-Type': 'application/json' },
-			responseType: 'text',
-			timeout: DEFAULT_REQUEST_TIMEOUT_MS,
-		}),
-		`SQD event logs ${network} ${contracts.length} contracts ${startBlock}-${toBlock}`
+	const { blocks, cursorBlock } = await getSqdLogBlocks(
+		dataset,
+		body,
+		`SQD event logs ${network} ${contracts.length} contracts`
 	);
-	const blocks = parseSqdBlocks(response.data);
 	const contractsByAddress = new Map(contracts.map(contract => [contract.address.toLowerCase(), contract]));
 	const interfacesByType = new Map([...new Set(contracts.map(contract => contract.type))]
 		.map(type => [type, getEventInterface(type)]));
@@ -280,7 +320,7 @@ async function getSqdLogScanEventsByContract(network, contracts, provider, fromB
 		}
 	}
 
-	return { eventsByAddress, cursorBlock: toBlock };
+	return { eventsByAddress, cursorBlock };
 }
 
 module.exports = {
