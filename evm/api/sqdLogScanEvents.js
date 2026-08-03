@@ -76,7 +76,7 @@ async function getSqdLogBlocks(dataset, body, logContext) {
 			try {
 				return await axios.post(`${SQD_PORTAL_BASE_URL}/${dataset}/stream`, nextBody, requestOptions);
 			} catch (e) {
-				if (e.response?.status !== 503) throw e;
+				if (![503, 529].includes(e.response?.status)) throw e;
 				const workerResponse = await axios.get(
 					`${SQD_PORTAL_BASE_URL}/${dataset}/${nextBody.fromBlock}/worker`,
 					{ timeout: DEFAULT_REQUEST_TIMEOUT_MS }
