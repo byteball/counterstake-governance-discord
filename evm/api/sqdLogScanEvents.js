@@ -4,6 +4,7 @@ const { getAbiByType } = require('../abi/getAbiByType');
 const DataFetcher = require('../controllers/DataFetcher');
 const Formatter = require('../controllers/Formatter');
 const sleep = require('../../utils/sleep');
+const scheduleSqdRequest = require('./sqdRequestScheduler');
 
 const DEFAULT_MAX_RETRIES = 5;
 const DEFAULT_RETRY_DELAY_MS = 2000;
@@ -74,18 +75,20 @@ async function getSqdLogBlocks(dataset, body, logContext) {
 		const nextBody = { ...body, fromBlock: cursorBlock + 1 };
 		const response = await requestWithRetry(async () => {
 			try {
-				return await axios.post(`${SQD_PORTAL_BASE_URL}/${dataset}/stream`, nextBody, requestOptions);
+				return await scheduleSqdRequest(() => (
+					axios.post(`${SQD_PORTAL_BASE_URL}/${dataset}/stream`, nextBody, requestOptions)
+				));
 			} catch (e) {
 				if (![503, 529].includes(e.response?.status)) throw e;
-				const workerResponse = await axios.get(
+				const workerResponse = await scheduleSqdRequest(() => axios.get(
 					`${SQD_PORTAL_BASE_URL}/${dataset}/${nextBody.fromBlock}/worker`,
 					{ timeout: DEFAULT_REQUEST_TIMEOUT_MS }
-				);
+				));
 				const workerUrl = String(workerResponse.data || '').trim();
 				if (!workerUrl.startsWith(`${SQD_PORTAL_BASE_URL}/`)) {
 					throw Error(`bad SQD worker URL ${workerUrl}`);
 				}
-				return axios.post(workerUrl, nextBody, requestOptions);
+				return scheduleSqdRequest(() => axios.post(workerUrl, nextBody, requestOptions));
 			}
 		}, `${logContext} ${nextBody.fromBlock}-${body.toBlock}`);
 		const batch = parseSqdBlocks(response.data);

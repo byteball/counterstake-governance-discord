@@ -1,6 +1,7 @@
 const axios = require('axios');
 const { eventsForV1 } = require('../eventsForV1');
 const sleep = require('../../utils/sleep');
+const scheduleSqdRequest = require('./sqdRequestScheduler');
 
 const DEFAULT_MAX_RETRIES = 5;
 const DEFAULT_RETRY_DELAY_MS = 2000;
@@ -159,7 +160,10 @@ function getSqdRequestBody(contracts, fromBlock, toBlock) {
 
 function parseSqdBlocks(data) {
 	const text = typeof data === 'string' ? data : String(data || '');
-	return text.split('\n')
+	const trimmed = text.trim();
+	if (!trimmed) return [];
+	if (trimmed.startsWith('[')) return JSON.parse(trimmed);
+	return trimmed.split('\n')
 		.map(line => line.trim())
 		.filter(Boolean)
 		.map(line => JSON.parse(line));
@@ -258,16 +262,34 @@ async function getSqdTargetCallsByContract(network, contracts, fromBlock, option
 		? Math.min(maxEndBlock, startBlock + SQD_SCAN_BLOCK_RANGE - 1)
 		: startBlock + SQD_SCAN_BLOCK_RANGE - 1;
 
+	const requestOptions = {
+		headers: { 'Content-Type': 'application/json' },
+		responseType: 'text',
+		timeout: DEFAULT_REQUEST_TIMEOUT_MS,
+	};
 	let nextBlock = startBlock;
 	const contractsByAddress = new Map(contracts.map(contract => [contract.address.toLowerCase(), contract]));
 	for (;;) {
 		const body = getSqdRequestBody(contracts, nextBlock, endBlock);
 		const response = await requestWithRetry(
-			() => axios.post(`${SQD_PORTAL_BASE_URL}/${dataset}/stream`, body, {
-				headers: { 'Content-Type': 'application/json' },
-				responseType: 'text',
-				timeout: DEFAULT_REQUEST_TIMEOUT_MS,
-			}),
+			async () => {
+				try {
+					return await scheduleSqdRequest(() => (
+						axios.post(`${SQD_PORTAL_BASE_URL}/${dataset}/stream`, body, requestOptions)
+					));
+				} catch (e) {
+					if (![503, 529].includes(e.response?.status)) throw e;
+					const workerResponse = await scheduleSqdRequest(() => axios.get(
+						`${SQD_PORTAL_BASE_URL}/${dataset}/${body.fromBlock}/worker`,
+						{ timeout: DEFAULT_REQUEST_TIMEOUT_MS }
+					));
+					const workerUrl = String(workerResponse.data || '').trim();
+					if (!workerUrl.startsWith(`${SQD_PORTAL_BASE_URL}/`)) {
+						throw Error(`bad SQD worker URL ${workerUrl}`);
+					}
+					return scheduleSqdRequest(() => axios.post(workerUrl, body, requestOptions));
+				}
+			},
 			`sqd trace calls ${network} ${contracts.length} contracts`
 		);
 		const blocks = parseSqdBlocks(response.data);
