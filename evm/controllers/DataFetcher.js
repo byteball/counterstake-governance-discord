@@ -7,13 +7,22 @@ function isArrayOutOfBoundsError(error, index) {
 		&& BigInt(panicCode) === ARRAY_OUT_OF_BOUNDS_PANIC_CODE) {
 		return true;
 	}
-	return index > 0
-		&& error?.code === 'CALL_EXCEPTION'
-		&& error?.action === 'call'
-		&& error?.data === '0x'
-		&& error?.reason === 'require(false)'
-		&& error?.invocation?.method === 'leader'
-		&& error?.invocation?.signature === 'leader(uint256)';
+	if (index <= 0) return false;
+	if (error?.code !== 'CALL_EXCEPTION' || error?.action !== 'call') return false;
+	if (error.data === '0x'
+		&& error.reason === 'require(false)'
+		&& error.invocation?.method === 'leader'
+		&& error.invocation?.signature === 'leader(uint256)') {
+		return true;
+	}
+
+	const rpcError = error?.info?.error;
+	return (error.data == null || error.data === '0x')
+		&& error.reason == null
+		&& error.revert == null
+		&& rpcError?.code === 3
+		&& /^execution reverted\.?$/i.test(rpcError.message?.trim() || '')
+		&& (rpcError.data == null || rpcError.data === '0x');
 }
 
 function toPlainArray(value) {
