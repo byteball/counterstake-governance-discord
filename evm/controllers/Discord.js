@@ -20,11 +20,11 @@ class Discord {
 	static announceEvent(meta, event) {
 		normalizeTriggerAddress(event);
 
-		const aa_name = meta.main_aa + ' - ' + meta.symbol + ' on ' + meta.network + ' (' + (meta.isImport ? 'import' : 'export') + ')';
+		const aa_name = meta.main_aa + ' - ' + meta.bridgeAsset.symbol + ' on ' + meta.network + ' (' + (meta.isImport ? 'import' : 'export') + ')';
 		return governanceDiscord.announceEvent(
 			aa_name,
-			meta.symbol,
-			meta.decimals,
+			meta.votingAsset.symbol,
+			meta.votingAsset.decimals,
 			conf.counterstake_base_url + meta.main_aa,
 			event,
 			getLinkToExplorerByTX(meta.network, event.trigger_unit)

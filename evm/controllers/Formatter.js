@@ -15,8 +15,8 @@ class Formatter {
 		}
 
 		if (["min_stake", "large_threshold"].includes(name)) {
-			const amount = ethers.formatUnits(value, meta.decimals);
-			return `${amount} ${meta.symbol}`
+			const amount = ethers.formatUnits(value, meta.stakeAsset.decimals);
+			return `${amount} ${meta.stakeAsset.symbol}`
 		}
 
 		return value;
