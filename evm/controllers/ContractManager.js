@@ -1,6 +1,7 @@
 const { ethers } = require("ethers");
 
 const Handlers = require('./Handlers');
+const AssetMetadataResolver = require('./AssetMetadataResolver');
 const { getAbiByType } = require('../abi/getAbiByType');
 
 const SUPPORTED_AA_VERSIONS = ['v1', 'v1.1', 'v1.2', 'v1.3'];
@@ -12,6 +13,7 @@ function wait(ms) {
 
 class ContractManager {
 	#contracts = Object.fromEntries(SUPPORTED_AA_VERSIONS.map(version => [version, {}]));
+	#assetMetadataResolver = new AssetMetadataResolver();
 	#initializedNetworks = {};
 	#contractsReadyHandlers = {};
 	#handlers = {
@@ -101,19 +103,39 @@ class ContractManager {
 	}
 
 	async #setContracts(contract, network, provider) {
-		const { type, aa, aa_version, symbol, decimals } = contract;
+		const { type, aa, aa_version, bridgeAsset: rawBridgeAsset } = contract;
 		if (!SUPPORTED_AA_VERSIONS.includes(aa_version)) {
 			throw Error(`unsupported EVM aa_version ${aa_version} for ${network} ${aa}`);
 		}
 
 		const isImport = type === 'import';
-		const meta = { aa_version, network, symbol, decimals, isImport, main_aa: aa };
-
 		const cs = new ethers.Contract(aa, getAbiByType('counterstake'), provider);
-		const governance_address = await cs.governance();
+		const [governance_address, settings] = await Promise.all([
+			cs.governance(),
+			cs.settings(),
+		]);
 		const governance = new ethers.Contract(governance_address, getAbiByType('governance'), provider);
-
-		meta.governance_address = governance_address;
+		const votingAssetAddress = await governance.votingTokenAddress();
+		const bridgeAsset = await this.#assetMetadataResolver.resolve(
+			network,
+			rawBridgeAsset.address,
+			provider,
+			[rawBridgeAsset]
+		);
+		const [stakeAsset, votingAsset] = await Promise.all([
+			this.#assetMetadataResolver.resolve(network, settings.tokenAddress, provider, [bridgeAsset]),
+			this.#assetMetadataResolver.resolve(network, votingAssetAddress, provider, [bridgeAsset]),
+		]);
+		const meta = {
+			aa_version,
+			network,
+			isImport,
+			main_aa: aa,
+			bridgeAsset,
+			stakeAsset,
+			votingAsset,
+			governance_address,
+		};
 
 		this.#addContract(meta, governance_address, 'governance', 'governance');
 

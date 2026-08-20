@@ -20,7 +20,7 @@ class Bridges {
 		}
 	}
 
-	#addBridgeContract(network, type, aa, aa_version, symbol, decimals) {
+	#addBridgeContract(network, type, aa, aa_version, bridgeAsset) {
 		if (!this.#bridgeContractsByNetwork[network]) {
 			this.#bridgeContractsByNetwork[network] = [];
 		}
@@ -30,16 +30,14 @@ class Bridges {
 			type,
 			aa,
 			aa_version,
-			symbol,
-			decimals,
+			bridgeAsset,
 		})
 
 		this.#bridgeContractsByNetwork[network].push({
 			type,
 			aa,
 			aa_version,
-			symbol,
-			decimals,
+			bridgeAsset,
 		});
 	}
 
@@ -49,8 +47,11 @@ class Bridges {
 				'export',
 				bridge.export_aa,
 				bridge.e_v,
-				bridge.home_symbol,
-				bridge.home_asset_decimals);
+				{
+					address: bridge.home_asset,
+					symbol: bridge.home_symbol,
+					decimals: bridge.home_asset_decimals,
+				});
 		}
 
 		if (bridge.foreign_network !== 'Obyte') {
@@ -58,8 +59,11 @@ class Bridges {
 				'import',
 				bridge.import_aa,
 				bridge.i_v,
-				bridge.foreign_symbol,
-				bridge.foreign_asset_decimals);
+				{
+					address: bridge.foreign_asset,
+					symbol: bridge.foreign_symbol,
+					decimals: bridge.foreign_asset_decimals,
+				});
 		}
 	}
 }
