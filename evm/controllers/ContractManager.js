@@ -11,6 +11,23 @@ function wait(ms) {
 	return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function isRetryableInitializationError(error) {
+	if (ethers.isError(error, 'TIMEOUT') || ethers.isError(error, 'NETWORK_ERROR')) {
+		return true;
+	}
+
+	const rpcError = error?.info?.error;
+	if (rpcError?.code === -32603 && typeof rpcError.message === 'string') {
+		return /^internal(?: json-rpc)? error\.?$/i.test(rpcError.message.trim());
+	}
+
+	if (error?.code !== undefined || typeof error?.message !== 'string') {
+		return false;
+	}
+	const message = error.message.toLowerCase();
+	return message.includes('internal error') || message.includes('timeout');
+}
+
 class ContractManager {
 	#contracts = Object.fromEntries(SUPPORTED_AA_VERSIONS.map(version => [version, {}]));
 	#assetMetadataResolver = new AssetMetadataResolver();
@@ -36,13 +53,8 @@ class ContractManager {
 				await wait(2000);
 			}
 		} catch (e) {
-			if (e?.message &&
-				(
-					e.message.toLowerCase().includes('internal error') ||
-					e.message.toLowerCase().includes('timeout')
-				)
-			) {
-				console.error('Error initializing contracts:', e.message, '. try reconnect');
+			if (isRetryableInitializationError(e)) {
+				console.error('Error initializing contracts:', e?.info?.error?.message || e.message, '. try reconnect');
 				await provider.destroy();
 				return false;
 			}
