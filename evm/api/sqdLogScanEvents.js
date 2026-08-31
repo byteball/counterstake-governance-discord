@@ -37,6 +37,8 @@ function getErrorMessage(e) {
 
 function getUnixTimestamp(value) {
 	if (!value) return null;
+	if (typeof value === 'number' && Number.isFinite(value) && value < 1e12)
+		return Math.floor(value);
 	const date = value instanceof Date ? value : new Date(value);
 	const timestamp = Math.floor(date.getTime() / 1000);
 	return Number.isFinite(timestamp) ? timestamp : null;
