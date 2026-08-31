@@ -32,6 +32,10 @@ let eventsForV1 = {
 			{
 				name: 'unvote',
 				code: 'function unvote() external',
+			},
+			{
+				name: 'commit',
+				code: 'function commit() external',
 			}
 		]
 	},
@@ -48,6 +52,10 @@ let eventsForV1 = {
 			{
 				name: 'unvote',
 				code: 'function unvote() external',
+			},
+			{
+				name: 'commit',
+				code: 'function commit() external',
 			}
 		]
 	},
@@ -64,6 +72,10 @@ let eventsForV1 = {
 			{
 				name: 'unvote',
 				code: 'function unvote() external',
+			},
+			{
+				name: 'commit',
+				code: 'function commit() external',
 			}
 		]
 	}

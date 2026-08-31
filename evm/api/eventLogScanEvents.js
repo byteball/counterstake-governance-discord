@@ -10,9 +10,9 @@ const LOG_SCAN_BLOCK_RANGE = 10000;
 const SUPPORTED_AA_VERSIONS = ['v1.1', 'v1.2', 'v1.3'];
 const EVENT_NAMES_BY_TYPE = {
 	governance: ['Deposit', 'Withdrawal'],
-	Uint: ['Vote', 'Unvote'],
-	UintArray: ['Vote', 'Unvote'],
-	address: ['Vote', 'Unvote'],
+	Uint: ['Vote', 'Unvote', 'Commit'],
+	UintArray: ['Vote', 'Unvote', 'Commit'],
+	address: ['Vote', 'Unvote', 'Commit'],
 };
 
 function isEventLogScanSupported(contract) {
@@ -141,6 +141,12 @@ async function parseVotedValueLog(contract, parsed, log, provider, blockCache) {
 	const { type, name, meta } = contract;
 	const event = getBaseEvent(contract, log, await getTimestamp(log, provider, blockCache));
 	event.trigger_address = parsed.args.who;
+
+	if (parsed.name === 'Commit') {
+		event.type = 'commit';
+		event.value = String(Formatter.format(name, parsed.args.value, meta));
+		return event;
+	}
 
 	if (parsed.name === 'Vote') {
 		event.type = 'added_support';

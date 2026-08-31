@@ -207,6 +207,19 @@ class AddressEventScanner {
 			return event;
 		}
 
+		if (name === 'commit') {
+			if (!call.commit_callback_input) {
+				console.log('commit callback not found', meta.network, hash, address);
+				return 'err';
+			}
+
+			const valueType = type === 'UintArray' ? 'uint256[]' : type === 'address' ? 'address' : 'uint256';
+			const [value] = ethers.AbiCoder.defaultAbiCoder().decode([valueType], '0x' + call.commit_callback_input.slice(10));
+			event.type = 'commit';
+			event.value = String(Formatter.format(contractName, value, meta));
+			return event;
+		}
+
 		if (name === 'voteAndDeposit' || name === 'vote') {
 			event.type = 'added_support';
 			const callOptions = getBlockCallOptions(call);
