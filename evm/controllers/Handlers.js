@@ -5,6 +5,7 @@ const governanceHandlers = require('../eventHandlers/governance');
 const uintHandlers = require("../eventHandlers/uint");
 const uintArrayHandlers = require("../eventHandlers/uintArray");
 const addressHandlers = require("../eventHandlers/address");
+const commitHandler = require('../eventHandlers/commit');
 
 class Handlers {
 	static #catchRealtimeError(network, type, error) {
@@ -27,6 +28,11 @@ class Handlers {
 
 	static addUintHandler(contract, provider) {
 		let c = new ethers.Contract(contract.address, getAbiByType('Uint'), provider.provider);
+		c.on('Commit', (...args) => {
+			commitHandler(contract, ...args).catch((e) => {
+				Handlers.#catchRealtimeError(provider.network, 'Uint Commit', e);
+			});
+		});
 		c.on('Vote', (...args) => {
 			uintHandlers.vote(contract, ...args).catch((e) => {
 				Handlers.#catchRealtimeError(provider.network, 'Uint Vote', e);
@@ -46,6 +52,11 @@ class Handlers {
 
 	static addUintArrayHandler(contract, provider) {
 		let c = new ethers.Contract(contract.address, getAbiByType('UintArray'), provider.provider);
+		c.on('Commit', (...args) => {
+			commitHandler(contract, ...args).catch((e) => {
+				Handlers.#catchRealtimeError(provider.network, 'UintArray Commit', e);
+			});
+		});
 		c.on('Vote', (...args) => {
 			uintArrayHandlers.vote(contract, ...args).catch((e) => {
 				Handlers.#catchRealtimeError(provider.network, 'UintArray Vote', e);
@@ -65,6 +76,11 @@ class Handlers {
 
 	static addAddressHandler(contract, provider) {
 		let c = new ethers.Contract(contract.address, getAbiByType('address'), provider.provider);
+		c.on('Commit', (...args) => {
+			commitHandler(contract, ...args).catch((e) => {
+				Handlers.#catchRealtimeError(provider.network, 'address Commit', e);
+			});
+		});
 		c.on('Vote', (...args) => {
 			addressHandlers.vote(contract, ...args).catch((e) => {
 				Handlers.#catchRealtimeError(provider.network, 'address Vote', e);

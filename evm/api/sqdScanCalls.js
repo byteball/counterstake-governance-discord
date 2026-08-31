@@ -219,8 +219,13 @@ function isPublishableCall(call) {
 		&& !call.error;
 }
 
-function normalizeSqdTrace(block, traces, trace, transaction) {
+function normalizeSqdTrace(block, traces, trace, transaction, contract) {
 	const action = trace.action || {};
+	const callback = traces.find(child => Number(child.transactionIndex) === Number(trace.transactionIndex)
+		&& isChildTrace(trace, child)
+		&& sameAddress(child.action?.from, action.to)
+		&& sameAddress(child.action?.to, contract.meta.main_aa)
+		&& !child.error && !child.revertReason);
 	return {
 		hash: transaction && transaction.hash,
 		block_number: normalizeBlockNumber(block.header.number),
@@ -233,6 +238,7 @@ function normalizeSqdTrace(block, traces, trace, transaction) {
 		status: trace.error || trace.revertReason ? '0' : '1',
 		error: trace.error || trace.revertReason,
 		internal_transactions: getChildInternalValues(traces, trace),
+		commit_callback_input: callback?.action?.input,
 	};
 }
 
@@ -244,7 +250,7 @@ function getCallsFromBlock(block, contractsByAddress) {
 		const contract = contractsByAddress.get(String(action.to || '').toLowerCase());
 		if (!contract) continue;
 		const tx = transactions.get(Number(trace.transactionIndex));
-		const call = normalizeSqdTrace(block, block.traces || [], trace, tx);
+		const call = normalizeSqdTrace(block, block.traces || [], trace, tx, contract);
 		if (isPublishableCall(call)) calls.push({ contract, call });
 	}
 	return calls;
