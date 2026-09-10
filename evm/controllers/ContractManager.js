@@ -128,6 +128,7 @@ class ContractManager {
 		]);
 		const governance = new ethers.Contract(governance_address, getAbiByType('governance'), provider);
 		const votingAssetAddress = await governance.votingTokenAddress();
+		const challenging_period = Number(await governance.governance_challenging_period());
 		const bridgeAsset = await this.#assetMetadataResolver.resolve(
 			network,
 			rawBridgeAsset.address,
@@ -147,6 +148,7 @@ class ContractManager {
 			stakeAsset,
 			votingAsset,
 			governance_address,
+			challenging_period,
 		};
 
 		this.#addContract(meta, governance_address, 'governance', 'governance');

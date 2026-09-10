@@ -9,6 +9,7 @@ const governanceDiscord = require('governance_events/governance_discord.js');
 const migration = require('./migration');
 const evm = require('./evm');
 const { isAfterScanStartDate } = require('./utils/scanStartDateFilter');
+const ObyteLeaderMonitor = require('./alerts/ObyteLeaderMonitor');
 
 var assocGovernanceAAs = {};
 var assocCounterstakeAAs = {};
@@ -22,6 +23,10 @@ eventBus.once('connected', function(ws){
 async function start(){
 	await discoverGovernanceAas();
 	watchBaseGovernanceAas();
+	new ObyteLeaderMonitor({
+		getGovernanceAAs: () => assocGovernanceAAs,
+		getCounterstakeAAs: () => assocCounterstakeAAs,
+	}).start();
 	eventBus.on('connected', function(){
 		watchBaseGovernanceAas();
 	});
@@ -65,9 +70,11 @@ async function indexAndWatchGovernanceAA(governanceAA){
 	const mainAAAddress = governanceAA.definition[1].params[isImport ? 'import_aa' : 'export_aa'];
 
 	await indexAllCounterstakeAaParams(mainAAAddress, isImport);
+	const params = governanceAA.definition[1].params || {};
 	assocGovernanceAAs[governanceAA.address] = {
 		main_aa: mainAAAddress,
-		is_import: isImport
+		is_import: isImport,
+		challenging_period: Number(params.challenging_period) || 3*24*3600, // $challenging_period = params.challenging_period OTHERWISE 3*24*3600
 	}
 
 	await new Promise(resolve => walletGeneral.addWatchedAddress(governanceAA.address, resolve));
