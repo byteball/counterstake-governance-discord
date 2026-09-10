@@ -8,6 +8,7 @@ const getErrorMessage = require('../../utils/getErrorMessage');
 const DEFAULT_MAX_RETRIES = 5;
 const DEFAULT_RETRY_DELAY_MS = 2000;
 const LOG_SCAN_BLOCK_RANGE = 10000;
+const KAVA_LOG_SCAN_ADDRESS_LIMIT = 10;
 const SUPPORTED_AA_VERSIONS = ['v1.1', 'v1.2', 'v1.3'];
 const EVENT_NAMES_BY_TYPE = {
 	governance: ['Deposit', 'Withdrawal'],
@@ -187,12 +188,20 @@ async function getEventLogScanEventsByContract(contracts, provider, fromBlock, o
 		.map(type => [type, getEventInterface(type)]));
 	const contractsByAddress = new Map(contracts.map(contract => [contract.address.toLowerCase(), contract]));
 	const topics = [...new Set(contracts.flatMap(contract => getLogTopics(contract.type, interfacesByType.get(contract.type))))];
-	const logs = await requestWithRetry(() => provider.getLogs({
-		address: contracts.map(contract => contract.address),
-		fromBlock: startBlock,
-		toBlock,
-		topics: [topics],
-	}), `event logs ${contracts[0]?.meta?.network} ${contracts.length} contracts ${startBlock}-${toBlock}`);
+	const addresses = [...contractsByAddress.keys()];
+	const network = contracts[0]?.meta?.network;
+	const batchSize = network === 'Kava' ? KAVA_LOG_SCAN_ADDRESS_LIMIT : addresses.length;
+	let logs = [];
+	for (let i = 0; i < addresses.length; i += batchSize) {
+		const batchAddresses = addresses.slice(i, i + batchSize);
+		const batchLogs = await requestWithRetry(() => provider.getLogs({
+			address: batchAddresses,
+			fromBlock: startBlock,
+			toBlock,
+			topics: [topics],
+		}), `event logs ${network} ${batchAddresses.length} contracts ${startBlock}-${toBlock}`);
+		logs = logs.concat(batchLogs);
+	}
 	const blockCache = new Map();
 
 	for (const log of logs) {
